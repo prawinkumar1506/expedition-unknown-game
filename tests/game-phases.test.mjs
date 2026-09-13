@@ -8,7 +8,7 @@ import featuresHandler from "../api/features.js";
 import qualityHandler, { buildQualityPlan, scoreRepairPlan } from "../api/quality.js";
 import cameraHandler from "../api/camera.js";
 import recoveryHandler from "../api/recovery.js";
-import { buildKaggleScript, normalizeTuning } from "../public/kaggle-export.js";
+import { buildKaggleScript, kaggleFilename, normalizeTuning } from "../public/kaggle-export.js";
 
 const response = () => ({ statusCode: 200, headers: {}, setHeader(name, value) { this.headers[name] = value; }, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; }, end(body) { this.body = body; } });
 const invoke = async (handler, body, query) => { const res = response(); await handler({ method: "POST", body, query }, res); return res; };
@@ -140,12 +140,21 @@ test("Event 4 reports credit spend and elapsed time in the sealed quality payloa
   assert.equal(result.body.timeTakenSeconds, 273);
 });
 
-test("Event 5 generates a model-specific Kaggle RandomizedSearchCV handoff", () => {
+test("Event 5 generates a model-specific .ipynb notebook that reads train16/test16 CSVs and keeps source data untouched", () => {
   const tuning = normalizeTuning({ trials: 27, folds: 5, randomState: 90210 });
-  const script = buildKaggleScript({ model: "Random Forest", features: assignment("500005").features.slice(0, 10), repairs: { missingColumns: ["vehicle_count"], outlierColumns: [], labelRecords: [], duplicateGroups: [] }, tuning });
-  assert.match(script, /RandomizedSearchCV/); assert.match(script, /RandomForestClassifier/); assert.match(script, /N_ITER = 27/); assert.match(script, /CV_FOLDS = 5/); assert.match(script, /RANDOM_STATE = 90210/); assert.match(script, /best_estimator_/); assert.match(script, /randomized_search_results\.csv/); assert.match(script, /best_model_evaluation\.json/); assert.match(script, /FileLink\("submission\.csv"\)/); assert.doesNotMatch(script, /test_truth\.csv/);
-  const backup = buildKaggleScript({ model: "Support Vector Machine", features: assignment("500005").backupFeatures, emergencyFeed: true });
+  const notebook = buildKaggleScript({ model: "Random Forest", features: assignment("500005").features.slice(0, 10), repairs: { missingColumns: ["vehicle_count"], outlierColumns: [], labelRecords: [], duplicateGroups: [] }, tuning, notebook: true });
+  assert.match(notebook, /"cells"/); assert.match(notebook, /"nbformat"/); assert.match(notebook, /submission\.csv/); assert.match(notebook, /submission\.to_csv\(.*submission\.csv.*index=False/i); assert.match(notebook, /classification_report/); assert.match(notebook, /pd\.read_csv\(\\"train_16\.csv\\"\)|pd\.read_csv\(\\'train_16\.csv\\'\)/i); assert.match(notebook, /pd\.read_csv\(\\"test_16\.csv\\"\)|pd\.read_csv\(\\'test_16\.csv\\'\)/i); assert.doesNotMatch(notebook, /train16\.csv|test16\.csv/); assert.doesNotMatch(notebook, /read_csv\(.*train16\.csv.*\)/);
+  const backup = buildKaggleScript({ model: "Support Vector Machine", features: assignment("500005").backupFeatures, emergencyFeed: true, notebook: true });
   assert.match(backup, /train_backup_10\.csv/); assert.match(backup, /test_backup_10\.csv/); assert.match(backup, /SVC\(kernel=/);
+  assert.equal(kaggleFilename("Decision Tree", "ipynb"), "decision-tree-randomized-search.ipynb");
+});
+
+test("Event 5 enforces a 40-minute notebook handoff window before generation is locked", async () => {
+  const fs = await import("node:fs/promises");
+  const source = await fs.readFile(new URL("../public/game.js", import.meta.url), "utf8");
+  assert.match(source, /FORECAST_TIMEOUT_SECONDS\s*=\s*40\s*\*\s*60/);
+  assert.match(source, /forecastLocked|40-minute|40 minute/i);
+  assert.match(source, /generateKaggle|generate.*notebook.*expired|notebook.*locked/i);
 });
 
 test("the retired camera route states that Event 2 is tabular", () => {

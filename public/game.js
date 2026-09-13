@@ -31,10 +31,12 @@ let selectedFeatures = new Set(), analysisType = "stats", analysisFeature = "", 
 let featureTimeSpentSec = 0, featureTimerId = null, featureTimerStart = Date.now();
 let qualityPlan = null, repairs = { missingColumns: new Set(), outlierColumns: new Set(), labelRecords: new Set(), duplicateGroups: new Set() }, emergencyFeed = false, qualityState = "", qualityResult = null, qualityStatus = "";
 let qualityTimeSpentSec = 0, qualityTimerId = null, qualityTimerStart = Date.now();
-let model = "Decision Tree", tuning = normalizeTuning(), kaggleScript = "", forecastStatus = "";
+let model = "Decision Tree", tuning = normalizeTuning(), kaggleScript = "", forecastStatus = "", forecastLocked = false;
+let forecastTimeSpentSec = 0, forecastTimerId = null, forecastTimerStart = Date.now();
 const FEATURE_TIMEOUT_SECONDS = 30 * 60;
 const QUALITY_TIMEOUT_SECONDS = 20 * 60;
 const EVENT1_TIMEOUT_SECONDS = 15 * 60;
+const FORECAST_TIMEOUT_SECONDS = 40 * 60;
 
 const formatCountdown = (secondsRemaining) => {
   const totalSeconds = Math.max(0, secondsRemaining);
@@ -46,6 +48,7 @@ const formatManualCountdown = () => formatCountdown(15 * 60 - manualTimeSpentSec
 const formatFeatureCountdown = () => formatCountdown(FEATURE_TIMEOUT_SECONDS - featureTimeSpentSec);
 const formatQualityCountdown = () => formatCountdown(QUALITY_TIMEOUT_SECONDS - qualityTimeSpentSec);
 const formatEvent1Countdown = () => formatCountdown(EVENT1_TIMEOUT_SECONDS - event1TimeSpentSec);
+const formatForecastCountdown = () => formatCountdown(FORECAST_TIMEOUT_SECONDS - forecastTimeSpentSec);
 
 const saveEvent1Result = result => {
   const storageKey = "clearway-event1-scores";
@@ -252,13 +255,33 @@ const startQualityTimer = () => {
   }, 1000);
 };
 
+const startForecastTimer = () => {
+  if (forecastLocked || forecastTimerId) clearInterval(forecastTimerId);
+  forecastTimerStart = Date.now();
+  forecastTimeSpentSec = 0;
+  forecastTimerId = setInterval(() => {
+    forecastTimeSpentSec = Math.min(FORECAST_TIMEOUT_SECONDS, Math.floor((Date.now() - forecastTimerStart) / 1000));
+    if (forecastTimeSpentSec >= FORECAST_TIMEOUT_SECONDS) {
+      clearInterval(forecastTimerId);
+      forecastLocked = true;
+      forecastStatus = "40 minutes elapsed. Notebook generation is now locked and cannot be reopened.";
+      if (stage === "forecast") render();
+      return;
+    }
+    if (stage === "forecast") {
+      const timerNode = document.querySelector("#forecast-timer-value");
+      if (timerNode) timerNode.textContent = formatForecastCountdown();
+    }
+  }, 1000);
+};
+
 const featureName = name => data?.featureMeta?.[name]?.label || String(name).replaceAll("_", " ");
 const number = value => Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
 const sectionIntro = (event, title, subtitle, beats) => `<section class="story-brief"><span>EVENT ${event} · ${esc(title.toUpperCase())}</span><h1>${esc(title.split(" ")[0])} <i>${esc(title.split(" ").slice(1).join(" "))}</i></h1><p>${esc(subtitle)}</p><div class="story-beats">${beats.map((beat, index) => `<span class="${index < stageOrder.indexOf(stage) ? "done" : index === stageOrder.indexOf(stage) ? "active" : ""}">${esc(beat)}</span>`).join("")}</div></section>`;
 
 function setStage(next) {
   const index = stageOrder.indexOf(next); if (index < 0 || index > highestStage) return;
-  stage = next; render(); if (stage === "event1") startEvent1Timer(); if (stage === "manual") startManualTimer(); if (stage === "features") startFeatureTimer(); if (stage === "quality") startQualityTimer(); window.scrollTo({ top: 0, behavior: "smooth" });
+  stage = next; render(); if (stage === "event1") startEvent1Timer(); if (stage === "manual") startManualTimer(); if (stage === "features") startFeatureTimer(); if (stage === "quality") startQualityTimer(); if (stage === "forecast") startForecastTimer(); window.scrollTo({ top: 0, behavior: "smooth" });
 }
 function updateChrome() {
   featureCredit.textContent = `${analysisCredits} / 10`;
@@ -386,11 +409,11 @@ function renderQuality() {
 
 function renderForecast() {
   const outputNames = "submission.csv · randomized_search_results.csv · best_model_evaluation.json";
-  return `${sectionIntro("5", "Kaggle Forecast Handoff", "The app seals your decisions but does not train in production. Configure tuning here, then paste or download the generated Kaggle cell. It runs RandomizedSearchCV, evaluates the selected best configuration, and writes downloadable results.", ["Manual Override", "Feature Hunt", "Quality Lab", "Kaggle handoff"])}
-    <section class="incident-ribbon"><div><small>FINAL TEST FEED</small><b>500 clean unseen rows</b></div><div><small>SEARCH METHOD</small><b>RandomizedSearchCV</b></div><div><small>PRIMARY METRIC</small><b>Macro F1</b></div><div><small>OUTPUTS</small><b>3 Kaggle files</b></div></section>
-    <section class="card"><div class="panel-title">Model choice <span>One real scikit-learn pipeline per Kaggle run</span></div><div class="model-grid">${models.map(item => `<button class="model ${model === item[0] ? "selected" : ""}" data-model="${item[0]}"><span>RANDOMIZED SEARCH</span><b>${esc(item[0])}</b><i class="protocol-name">IMPUTE · SCALE · TUNE</i><small>${esc(item[1])}</small></button>`).join("")}</div></section>
-    <section class="card"><div class="panel-title">Hyperparameter tuning brief <span>These settings are embedded in the Kaggle cell</span></div><div class="analysis-config"><label>Random-search trials<input id="tuning-trials" type="number" min="5" max="100" value="${tuning.trials}"></label><label>Stratified CV folds<input id="tuning-folds" type="number" min="3" max="10" value="${tuning.folds}"></label><label>Random seed<input id="tuning-seed" type="number" min="0" max="999999" value="${tuning.randomState}"></label><a class="btn btn--ghost" href="https://www.kaggle.com/code/new" target="_blank" rel="noreferrer">Open Kaggle notebook</a></div><div class="analysis-status">The cell searches model-specific distributions with Macro F1, refits the best parameters, then runs a second cross-validation of that selected estimator. That second figure is post-tuning—not an unbiased nested-CV estimate.</div></section>
-    <section class="card"><div class="panel-title">Kaggle delivery <span>Upload the supplied traffic CSV files as a Kaggle Dataset first</span></div><div class="stage-actions"><span class="${kaggleScript ? "recovery-message success" : "recovery-message"}">${esc(forecastStatus || `The generated cell will save ${outputNames}. Kaggle renders direct download links after it finishes.`)}</span><button id="generate-kaggle" class="btn btn--primary">Generate Kaggle cell</button>${kaggleScript ? `<button id="copy-kaggle" class="btn btn--ghost">Copy cell</button>` : ""}</div>${kaggleScript ? `<pre class="analysis-status" style="margin:12px 0 0;white-space:pre-wrap;max-height:260px;overflow:auto">${esc(kaggleScript)}</pre>` : ""}</section>`;
+  return `${sectionIntro("5", "Notebook Model Handoff", "The app seals your decisions but does not train in production. Configure tuning here, then download the generated notebook. It runs RandomizedSearchCV, evaluates the selected best configuration, and writes a local submission file.", ["Manual Override", "Feature Hunt", "Quality Lab", "Notebook handoff"])}
+    <section class="incident-ribbon"><div><small>FINAL TEST FEED</small><b>500 clean unseen rows</b></div><div><small>SEARCH METHOD</small><b>RandomizedSearchCV</b></div><div><small>PRIMARY METRIC</small><b>Macro F1</b></div><div><small>OUTPUTS</small><b>1 notebook + submission.csv</b></div></section>
+    <section class="card"><div class="panel-title">Model choice <span>One real scikit-learn pipeline per notebook run</span></div><div class="model-grid">${models.map(item => `<button class="model ${model === item[0] ? "selected" : ""}" data-model="${item[0]}"><span>RANDOMIZED SEARCH</span><b>${esc(item[0])}</b><i class="protocol-name">IMPUTE · SCALE · TUNE</i><small>${esc(item[1])}</small></button>`).join("")}</div></section>
+    <section class="card"><div class="panel-title">Hyperparameter tuning brief <span>These settings are embedded in the notebook</span></div><div class="analysis-config"><label>Random-search trials<input id="tuning-trials" type="number" min="5" max="100" value="${tuning.trials}"></label><label>Stratified CV folds<input id="tuning-folds" type="number" min="3" max="10" value="${tuning.folds}"></label><label>Random seed<input id="tuning-seed" type="number" min="0" max="999999" value="${tuning.randomState}"></label><div class="timer-strip"><small>Handoff window</small><strong id="forecast-timer-value">${formatForecastCountdown()}</strong></div><button class="btn btn--ghost" type="button" ${forecastLocked ? "disabled" : ""}>${forecastLocked ? "Notebook locked" : "Notebook ready"}</button></div><div class="analysis-status">Each model has a different search space, and the notebook updates its optimizer accordingly for the selected estimator. The tuning settings are per-model and are not globally fixed to a tiny grid.</div></section>
+    <section class="card"><div class="panel-title">Notebook delivery <span>Download the ready-to-run local notebook</span></div><div class="stage-actions"><span class="${kaggleScript ? "recovery-message success" : "recovery-message"}">${esc(forecastStatus || (forecastLocked ? "The 40-minute handoff window has expired. Notebook generation is locked." : `The generated notebook will save ${outputNames}. It runs locally and writes a submission.csv without changing the source CSV files.`))}</span><button id="generate-kaggle" class="btn btn--primary" ${forecastLocked ? "disabled" : ""}>${forecastLocked ? "Generation locked" : "Generate Notebook"}</button>${kaggleScript ? `<button id="copy-kaggle" class="btn btn--ghost">Copy notebook JSON</button>` : ""}</div>${kaggleScript ? `<pre class="analysis-status" style="margin:12px 0 0;white-space:pre-wrap;max-height:260px;overflow:auto">${esc(kaggleScript)}</pre>` : ""}</section>`;
 }
 
 function render() {
@@ -464,11 +487,11 @@ function bind() {
   document.querySelectorAll("[data-model]").forEach(button => button.onclick = () => { model = button.dataset.model; kaggleScript = ""; download.disabled = true; forecastStatus = ""; render(); });
   const tuningTrials = document.querySelector("#tuning-trials"), tuningFolds = document.querySelector("#tuning-folds"), tuningSeed = document.querySelector("#tuning-seed");
   [tuningTrials, tuningFolds, tuningSeed].filter(Boolean).forEach(input => input.onchange = () => { tuning = normalizeTuning({ trials: tuningTrials.value, folds: tuningFolds.value, randomState: tuningSeed.value }); kaggleScript = ""; download.disabled = true; forecastStatus = ""; render(); });
-  const generateKaggle = document.querySelector("#generate-kaggle"); if (generateKaggle) generateKaggle.onclick = () => { try { const finalRepairs = qualityResult?.emergencyFeed ? {} : Object.fromEntries(Object.entries(repairs).map(([key, value]) => [key, [...value]])); kaggleScript = buildKaggleScript({ model, features: qualityResult?.features || featureResult?.selected, emergencyFeed: Boolean(qualityResult?.emergencyFeed), repairs: finalRepairs, tuning }); download.disabled = false; forecastStatus = `${model} Kaggle cell ready. Paste it into a Kaggle notebook or download it from the top bar.`; render(); } catch (error) { forecastStatus = error.message; render(); } };
-  const copyKaggle = document.querySelector("#copy-kaggle"); if (copyKaggle) copyKaggle.onclick = async () => { try { await navigator.clipboard.writeText(kaggleScript); forecastStatus = "Kaggle cell copied to the clipboard."; render(); } catch { forecastStatus = "Clipboard access was blocked. Use the download button in the top bar instead."; render(); } };
+  const generateKaggle = document.querySelector("#generate-kaggle"); if (generateKaggle) generateKaggle.onclick = () => { if (forecastLocked) { forecastStatus = "40 minutes elapsed. Notebook generation is locked."; render(); return; } try { const finalRepairs = qualityResult?.emergencyFeed ? {} : Object.fromEntries(Object.entries(repairs).map(([key, value]) => [key, [...value]])); kaggleScript = buildKaggleScript({ model, features: qualityResult?.features || featureResult?.selected, emergencyFeed: Boolean(qualityResult?.emergencyFeed), repairs: finalRepairs, tuning, notebook: true }); download.disabled = false; forecastStatus = `${model} notebook ready. Download the .ipynb file from the top bar.`; render(); } catch (error) { forecastStatus = error.message; render(); } };
+  const copyKaggle = document.querySelector("#copy-kaggle"); if (copyKaggle) copyKaggle.onclick = async () => { try { await navigator.clipboard.writeText(kaggleScript); forecastStatus = "Notebook JSON copied to the clipboard."; render(); } catch { forecastStatus = "Clipboard access was blocked. Use the download button in the top bar instead."; render(); } };
 }
 
-download.onclick = () => { if (!kaggleScript) return; const url = URL.createObjectURL(new Blob([kaggleScript], { type: "text/x-python" })), link = document.createElement("a"); link.href = url; link.download = kaggleFilename(model); link.click(); URL.revokeObjectURL(url); };
+download.onclick = () => { if (!kaggleScript) return; const url = URL.createObjectURL(new Blob([kaggleScript], { type: "application/x-ipynb+json" })), link = document.createElement("a"); link.href = url; link.download = kaggleFilename(model, "ipynb"); link.click(); URL.revokeObjectURL(url); };
 document.querySelectorAll("[data-stage]").forEach(button => button.onclick = () => setStage(button.dataset.stage));
 request("/api/mission", session).then(result => {
   data = result; analysisFeature = data.features[0]; analysisSecond = data.features[1];

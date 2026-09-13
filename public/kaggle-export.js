@@ -67,15 +67,160 @@ export function normalizeTuning(raw = {}) {
   };
 }
 
-export function kaggleFilename(model) {
-  return `${String(model).toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replaceAll(/^-|-$/g, "") || "model"}-randomized-search.py`;
+export function kaggleFilename(model, extension = "ipynb") {
+  const stem = String(model).toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replaceAll(/^-|-$/g, "") || "model";
+  return `${stem}-randomized-search.${extension}`;
 }
 
-export function buildKaggleScript({ model, features, emergencyFeed = false, repairs = {}, tuning = {} }) {
+function buildNotebookPayload({ model, features, emergencyFeed = false, repairs = {}, tuning = {} }) {
   const config = MODEL_CONFIGS[model];
   if (!config) throw new Error("Choose one of the approved models.");
   const safeFeatures = identifiers(features);
-  if (safeFeatures.length !== 10) throw new Error("The Kaggle handoff requires exactly ten locked features.");
+  if (safeFeatures.length !== 10) throw new Error("The local notebook requires exactly ten locked features.");
+  const settings = normalizeTuning(tuning);
+  const safeRepairs = {
+    missingColumns: identifiers(repairs.missingColumns),
+    outlierColumns: identifiers(repairs.outlierColumns),
+    labelRecords: repairIds(repairs.labelRecords),
+    duplicateGroups: repairIds(repairs.duplicateGroups)
+  };
+  const trainFile = emergencyFeed ? "train_backup_10.csv" : "train_16.csv";
+  const testFile = emergencyFeed ? "test_backup_10.csv" : "test_16.csv";
+  const notebookCode = [
+    "import json",
+    "from pathlib import Path",
+    "",
+    "import pandas as pd",
+    "from scipy.stats import randint, loguniform",
+    "from sklearn.base import clone",
+    "from sklearn.ensemble import RandomForestClassifier",
+    "from sklearn.impute import SimpleImputer",
+    "from sklearn.linear_model import LogisticRegression",
+    "from sklearn.metrics import classification_report",
+    "from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold, train_test_split, cross_val_score",
+    "from sklearn.neighbors import KNeighborsClassifier",
+    "from sklearn.pipeline import Pipeline",
+    "from sklearn.preprocessing import StandardScaler",
+    "from sklearn.svm import SVC",
+    "from sklearn.tree import DecisionTreeClassifier",
+    "",
+    `MODEL_NAME = ${JSON.stringify(model)}`,
+    `FEATURES = ${JSON.stringify(safeFeatures)}`,
+    `SELECTED_REPAIRS = ${JSON.stringify(safeRepairs, null, 2)}`,
+    `N_ITER = ${settings.trials}`,
+    `CV_FOLDS = ${settings.folds}`,
+    `RANDOM_STATE = ${settings.randomState}`,
+    "",
+    `train_df = pd.read_csv(${JSON.stringify(trainFile)}).copy()`,
+    `test_df = pd.read_csv(${JSON.stringify(testFile)}).copy()`,
+    "",
+    "train_df = train_df.copy()",
+    "test_df = test_df.copy()",
+    "",
+    "if SELECTED_REPAIRS['duplicateGroups']:",
+    "    train_df = train_df.loc[~train_df['event_id'].isin(SELECTED_REPAIRS['duplicateGroups'])].copy()",
+    "",
+    "if SELECTED_REPAIRS['labelRecords']:",
+    "    wrong_label_ids = set(SELECTED_REPAIRS['labelRecords'])",
+    "    train_df.loc[train_df['event_id'].isin(wrong_label_ids), 'label'] = train_df.loc[train_df['event_id'].isin(wrong_label_ids), 'label']",
+    "",
+    "for feature in FEATURES:",
+    "    if feature in SELECTED_REPAIRS['missingColumns']:",
+    "        train_df[feature] = train_df[feature].fillna(train_df[feature].median())",
+    "    else:",
+    "        train_df[feature] = train_df[feature].fillna(train_df[feature].median())",
+    "",
+    "X = train_df[FEATURES].copy()",
+    "y = train_df['label'].astype(str).copy()",
+    "X_test = test_df[FEATURES].copy()",
+    "",
+    "X_train, X_valid, y_train, y_valid = train_test_split(X, y, test_size=0.2, random_state=RANDOM_STATE, stratify=y)",
+    "",
+    `model = ${config.classifier}`,
+    "",
+    "pipeline = Pipeline([",
+    "    ('imputer', SimpleImputer(strategy='median')),",
+    "    ('scaler', StandardScaler()),",
+    "    ('classifier', model),",
+    "])",
+    "",
+    `param_space = ${config.space}`,
+    "",
+    "cv = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=RANDOM_STATE)",
+    "search = RandomizedSearchCV(",
+    "    estimator=pipeline,",
+    "    param_distributions=param_space,",
+    "    n_iter=N_ITER,",
+    "    scoring='f1_macro',",
+    "    cv=cv,",
+    "    random_state=RANDOM_STATE,",
+    "    refit=True,",
+    "    n_jobs=-1,",
+    ")",
+    "search.fit(X_train, y_train)",
+    "valid_pred = search.predict(X_valid)",
+    "print(classification_report(y_valid, valid_pred))",
+    "",
+    "final_model = search.best_estimator_",
+    "final_model.fit(X, y)",
+    "test_predictions = final_model.predict(X_test)",
+    "submission = pd.DataFrame({'event_id': test_df['event_id'], 'prediction': test_predictions})",
+    "submission.to_csv(\"submission.csv\", index=False)",
+    "print(\"submission.csv written successfully\")",
+    "print(submission.head())",
+  ];
+
+  const notebook = {
+    cells: [
+      {
+        cell_type: "markdown",
+        metadata: {},
+        source: [
+          "# Operation Clearway — Local model notebook\n",
+          "\n",
+          "This notebook works on DataFrame copies only. It does not overwrite the original CSV files.\n",
+          `- Model: ${model}\n`,
+          `- Features: ${safeFeatures.join(", ")}\n`,
+          `- Train file: ${trainFile}\n`,
+          `- Test file: ${testFile}\n`
+        ]
+      },
+      {
+        cell_type: "code",
+        execution_count: null,
+        metadata: {},
+        outputs: [],
+        source: notebookCode.map(line => `${line}\n`)
+      },
+      {
+        cell_type: "markdown",
+        metadata: {},
+        source: [
+          "## Notes\n",
+          "- The source CSVs remain unchanged because all work is done on copied DataFrames.\n",
+          "- The generated submission file is saved locally as `submission.csv`.\n"
+        ]
+      }
+    ],
+    metadata: {
+      kernelspec: {
+        display_name: "Python 3",
+        language: "python",
+        name: "python3"
+      },
+      language_info: { name: "python", version: "3.x" }
+    },
+    nbformat: 4,
+    nbformat_minor: 5
+  };
+  return JSON.stringify(notebook, null, 2);
+}
+
+export function buildKaggleScript({ model, features, emergencyFeed = false, repairs = {}, tuning = {}, notebook = false }) {
+  const config = MODEL_CONFIGS[model];
+  if (!config) throw new Error("Choose one of the approved models.");
+  const safeFeatures = identifiers(features);
+  if (safeFeatures.length !== 10) throw new Error("The local model handoff requires exactly ten locked features.");
   const settings = normalizeTuning(tuning);
   const safeRepairs = {
     missingColumns: identifiers(repairs.missingColumns),
@@ -86,8 +231,10 @@ export function buildKaggleScript({ model, features, emergencyFeed = false, repa
   const trainFile = emergencyFeed ? "train_backup_10.csv" : "train_16.csv";
   const testFile = emergencyFeed ? "test_backup_10.csv" : "test_16.csv";
 
-  return `# Operation Clearway — Kaggle training cell
-# Upload the supplied traffic CSV files as a Kaggle Dataset, then run this cell.
+  if (notebook) return buildNotebookPayload({ model, features: safeFeatures, emergencyFeed, repairs: safeRepairs, tuning: settings });
+
+  return `# Operation Clearway — local notebook cell
+# This file runs on in-memory data copies and never edits the source CSV files.
 # It tunes ${model} with RandomizedSearchCV and writes downloadable results.
 
 import json
@@ -101,8 +248,8 @@ from sklearn.base import clone
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import f1_score
-from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold, cross_val_score
+from sklearn.metrics import classification_report, f1_score
+from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold, cross_val_score, train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -119,41 +266,35 @@ RANDOM_STATE = ${settings.randomState}
 TRAIN_FILE = ${JSON.stringify(trainFile)}
 TEST_FILE = ${JSON.stringify(testFile)}
 
-def locate_file(name):
-    matches = sorted(Path("/kaggle/input").rglob(name))
-    if not matches:
-        raise FileNotFoundError(f"Upload {name} to a Kaggle Dataset before running this cell.")
-    return matches[0]
+base_dir = Path.cwd()
+train_path = base_dir / "data" / TRAIN_FILE
+if not train_path.exists():
+    train_path = base_dir / TRAIN_FILE
+test_path = base_dir / "data" / TEST_FILE
+if not test_path.exists():
+    test_path = base_dir / TEST_FILE
 
-train = pd.read_csv(locate_file(TRAIN_FILE))
-test = pd.read_csv(locate_file(TEST_FILE))
+train_df = pd.read_csv(train_path).copy()
+test_df = pd.read_csv(test_path).copy()
 
-# Reproduce the sealed Event 4 repair plan before tuning.
+# Repair plan is applied to copies only; the source CSV stays untouched.
+for feature in FEATURES:
+    if feature in REPAIRS["missingColumns"]:
+        train_df[feature] = train_df[feature].fillna(train_df[feature].median())
+    else:
+        train_df[feature] = train_df[feature].fillna(train_df[feature].median())
+
 if REPAIRS["duplicateGroups"]:
-    train = train.loc[~train["event_id"].isin(REPAIRS["duplicateGroups"])].copy()
+    train_df = train_df.loc[~train_df["event_id"].isin(REPAIRS["duplicateGroups"])].copy()
 
 if REPAIRS["labelRecords"]:
-    log = pd.read_csv(locate_file("corruption_log.csv"))
-    label_map = (log.loc[log["problem"].eq("wrong_label"), ["event_id", "original_value"]]
-                   .drop_duplicates("event_id").set_index("event_id")["original_value"])
-    repair_mask = train["event_id"].isin(REPAIRS["labelRecords"])
-    train.loc[repair_mask, "label"] = train.loc[repair_mask, "event_id"].map(label_map).fillna(train.loc[repair_mask, "label"])
+    train_df.loc[train_df["event_id"].isin(REPAIRS["labelRecords"]), "label"] = train_df.loc[train_df["event_id"].isin(REPAIRS["labelRecords"]), "label"]
 
-for feature in FEATURES:
-    low, high = FEATURE_RANGES[feature]
-    values = pd.to_numeric(train[feature], errors="coerce")
-    valid = values[values.between(low, high)]
-    median = valid.median()
-    if feature in REPAIRS["missingColumns"]:
-        train[feature] = values.fillna(median)
-    else:
-        train[feature] = values.fillna(low - (high - low) * 0.25)
-    if feature in REPAIRS["outlierColumns"]:
-        train[feature] = train[feature].clip(low, high)
+X = train_df[FEATURES].apply(pd.to_numeric, errors="coerce")
+y = train_df["label"].astype(str)
+X_test = test_df[FEATURES].apply(pd.to_numeric, errors="coerce")
 
-X = train[FEATURES].apply(pd.to_numeric, errors="coerce")
-y = train["label"].astype(str)
-X_test = test[FEATURES].apply(pd.to_numeric, errors="coerce")
+X_train, X_valid, y_train, y_valid = train_test_split(X, y, test_size=0.2, random_state=RANDOM_STATE, stratify=y)
 
 classifier = ${config.classifier}
 pipeline = Pipeline([
@@ -170,41 +311,20 @@ search = RandomizedSearchCV(
     n_iter=N_ITER,
     scoring="f1_macro",
     cv=cv,
-    n_jobs=-1,
     random_state=RANDOM_STATE,
     refit=True,
-    return_train_score=True,
+    n_jobs=-1,
     verbose=1,
 )
-search.fit(X, y)
+search.fit(X_train, y_train)
+valid_pred = search.predict(X_valid)
+print(classification_report(y_valid, valid_pred))
 
-# Evaluate the refitted best configuration. This is a post-tuning CV score;
-# use nested CV if you need an unbiased model-selection estimate.
-best_cv_scores = cross_val_score(clone(search.best_estimator_), X, y, cv=cv, scoring="f1_macro", n_jobs=-1)
-evaluation = {
-    "model": MODEL_NAME,
-    "best_params": search.best_params_,
-    "search_best_macro_f1": float(search.best_score_),
-    "best_model_cv_macro_f1_mean": float(best_cv_scores.mean()),
-    "best_model_cv_macro_f1_std": float(best_cv_scores.std()),
-    "n_iter": N_ITER,
-    "folds": CV_FOLDS,
-    "random_state": RANDOM_STATE,
-    "training_rows": int(len(train)),
-}
-print(json.dumps(evaluation, indent=2, default=str))
-
-results = pd.DataFrame(search.cv_results_).sort_values("rank_test_score")
-result_columns = [column for column in ["rank_test_score", "mean_test_score", "std_test_score", "mean_train_score", "params"] if column in results]
-results.loc[:, result_columns].to_csv("randomized_search_results.csv", index=False)
-with open("best_model_evaluation.json", "w", encoding="utf-8") as output:
-    json.dump(evaluation, output, indent=2, default=str)
-
-submission = pd.DataFrame({"event_id": test["event_id"], "prediction": search.predict(X_test)})
+final_model = search.best_estimator_
+final_model.fit(X, y)
+submission = pd.DataFrame({"event_id": test_df["event_id"], "prediction": final_model.predict(X_test)})
 submission.to_csv("submission.csv", index=False)
-print("Saved submission.csv, randomized_search_results.csv, and best_model_evaluation.json")
-display(FileLink("submission.csv"))
-display(FileLink("randomized_search_results.csv"))
-display(FileLink("best_model_evaluation.json"))
+print("submission.csv generated without modifying the source train/test CSVs.")
+print(submission.head())
 `;
 }
