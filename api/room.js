@@ -1,37 +1,44 @@
 import { clean, json } from "./_gateway.js";
 import { randomUUID } from "node:crypto";
+import { database, transaction } from "../db/sqlite.js";
 
 const pin = () => String(Math.floor(100000 + Math.random() * 900000));
-const configured = () => Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY);
-const headers = () => ({ "Content-Type": "application/json", apikey: process.env.SUPABASE_SECRET_KEY, Authorization: `Bearer ${process.env.SUPABASE_SECRET_KEY}` });
-async function db(path, init = {}) {
-  const response = await fetch(`${process.env.SUPABASE_URL}/rest/v1/${path}`, { ...init, headers: { ...headers(), ...init.headers } });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw Object.assign(new Error(body.message || body.hint || "Room database request failed"), { status: response.status });
-  return body;
-}
-const expose = r => ({ pin: r.pin, status: r.status, missionSeed: r.mission_seed, players: r.players || [] });
+const stages = new Set(["event1", "manual", "features", "quality", "forecast"]);
+const roomRow = roomPin => database.prepare("SELECT pin, status, mission_seed, host_token, expires_at FROM game_rooms WHERE pin = ? AND expires_at > ?").get(roomPin, Date.now());
+const expose = room => {
+  if (!room) return null;
+  const players = database.prepare("SELECT name, joined_at AS joinedAt FROM game_players WHERE room_pin = ? ORDER BY joined_at").all(room.pin);
+  const progress = Object.fromEntries(database.prepare("SELECT player_name, payload FROM game_progress WHERE room_pin = ?").all(room.pin).map(row => [row.player_name, JSON.parse(row.payload)]));
+  const stageUnlocks = { global: [], players: {} };
+  for (const row of database.prepare("SELECT stage, player_name FROM game_stage_unlocks WHERE room_pin = ? ORDER BY unlocked_at").all(room.pin)) {
+    if (row.player_name === null) stageUnlocks.global.push(row.stage);
+    else (stageUnlocks.players[row.player_name] ||= []).push(row.stage);
+  }
+  return { pin: room.pin, status: room.status, missionSeed: room.mission_seed, players, stageUnlocks, progress };
+};
+const requireRoom = body => {
+  const roomPin = clean(body.pin, 6);
+  if (!roomPin) throw Object.assign(new Error("valid room PIN required"), { status: 400 });
+  const room = roomRow(roomPin);
+  if (!room) throw Object.assign(new Error("Room not found"), { status: 404 });
+  return room;
+};
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return json(res, 405, { error: "POST required" });
-  if (!configured()) return json(res, 503, { error: "Live rooms need Supabase configuration. Add SUPABASE_URL and SUPABASE_SECRET_KEY in Vercel." });
   const action = clean(req.body?.action, 12);
   try {
     if (action === "create") {
-      for (let attempt = 0; attempt < 8; attempt++) {
-        const row = { pin: pin(), host_token: randomUUID(), mission_seed: randomUUID(), status: "lobby", players: [], expires_at: new Date(Date.now() + 14_400_000).toISOString() };
-        try { const created = await db("game_rooms", { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify(row) }); return json(res, 201, { room: expose(created[0] || created), hostToken: row.host_token }); }
-        catch (error) { if (error.status !== 409) throw error; }
-      }
-      return json(res, 503, { error: "Could not reserve a room PIN. Try again." });
+      return json(res, 201, transaction(() => { let roomPin; do roomPin = pin(); while (database.prepare("SELECT 1 FROM game_rooms WHERE pin = ?").get(roomPin)); const hostToken = randomUUID(); const now = Date.now(); database.prepare("INSERT INTO game_rooms (pin, host_token, mission_seed, expires_at, created_at) VALUES (?, ?, ?, ?, ?)").run(roomPin, hostToken, randomUUID(), now + 14_400_000, now); database.prepare("INSERT INTO game_stage_unlocks (room_pin, stage, player_name, unlocked_at) VALUES (?, 'event1', NULL, ?)").run(roomPin, now); return { room: expose(roomRow(roomPin)), hostToken }; }));
     }
-    const roomPin = clean(req.body?.pin, 6); if (!roomPin) return json(res, 400, { error: "valid room PIN required" });
-    if (action === "get") { const rows = await db(`game_rooms?pin=eq.${encodeURIComponent(roomPin)}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=pin,status,mission_seed,players`); return rows.length ? json(res, 200, { room: expose(rows[0]) }) : json(res, 404, { error: "Room not found" }); }
-    if (action === "join") { const name = clean(req.body?.player, 20); if (!name) return json(res, 400, { error: "player name required" }); const row = await db("rpc/join_game_room", { method: "POST", body: JSON.stringify({ room_pin: roomPin, player_name: name }) }); return json(res, 200, { room: expose(row) }); }
-    if (action === "start") { const token = String(req.body?.hostToken || ""); const row = await db("rpc/start_game_room", { method: "POST", body: JSON.stringify({ room_pin: roomPin, host_token: token }) }); return json(res, 200, { room: expose(row) }); }
+    const room = requireRoom(req.body || {}), roomPin = room.pin;
+    if (action === "get") return json(res, 200, { room: expose(room) });
+    if (action === "join") { const name = clean(req.body?.player, 20); if (!name) return json(res, 400, { error: "player name required" }); if (room.status !== "lobby") return json(res, 409, { error: "This game has already started" }); database.prepare("INSERT OR IGNORE INTO game_players (room_pin, name, joined_at) VALUES (?, ?, ?)").run(roomPin, name, Date.now()); return json(res, 200, { room: expose(roomRow(roomPin)) }); }
+    if (action === "start") { if (req.body.hostToken !== room.host_token) return json(res, 409, { error: "Only the room host can start this game" }); database.prepare("UPDATE game_rooms SET status = 'started' WHERE pin = ?").run(roomPin); return json(res, 200, { room: expose(roomRow(roomPin)) }); }
+    if (action === "saveProgress") { const player = clean(req.body?.player, 20), progress = req.body?.progress; if (!player || !progress || typeof progress !== "object") return json(res, 400, { error: "player progress required" }); if (!database.prepare("SELECT 1 FROM game_players WHERE room_pin = ? AND name = ?").get(roomPin, player)) return json(res, 409, { error: "Player is not in this room" }); database.prepare("INSERT INTO game_progress (room_pin, player_name, payload, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(room_pin, player_name) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at").run(roomPin, player, JSON.stringify(progress), Date.now()); return json(res, 200, { room: expose(roomRow(roomPin)) }); }
+    if (action === "unlock") { if (req.body.hostToken !== room.host_token) return json(res, 409, { error: "Only the room host can unlock stages" }); const stage = clean(req.body.stage, 20), player = req.body.player ? clean(req.body.player, 20) : null; if (!stages.has(stage)) return json(res, 400, { error: "invalid stage" }); database.prepare("INSERT OR IGNORE INTO game_stage_unlocks (room_pin, stage, player_name, unlocked_at) VALUES (?, ?, ?, ?)").run(roomPin, stage, player, Date.now()); return json(res, 200, { room: expose(roomRow(roomPin)) }); }
     return json(res, 400, { error: "unknown room action" });
   } catch (error) {
-    const message = error.message.includes("ROOM_NOT_FOUND") ? "Room not found" : error.message.includes("GAME_STARTED") ? "This game has already started" : error.message.includes("HOST_ONLY") ? "Only the room host can start this game" : error.message;
-    return json(res, error.status === 404 ? 404 : error.status === 403 ? 403 : 409, { error: message });
+    return json(res, error.status || 500, { error: error.message || "Room database error" });
   }
 }

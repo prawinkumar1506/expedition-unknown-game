@@ -6,10 +6,9 @@ import io
 import json
 import math
 import os
+import sqlite3
 from functools import lru_cache
 from pathlib import Path
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
 
 import numpy as np
 from sklearn.base import clone
@@ -29,6 +28,7 @@ from sklearn.tree import DecisionTreeClassifier
 # pipeline during development. Production exports a Kaggle training cell.
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data" / "traffic"
+DB_PATH = Path(os.getenv("CLEARWAY_DB_PATH", ROOT / "data" / "clearway.sqlite"))
 TRAFFIC_CLASSES = ["Free_Flow", "Heavy_Traffic", "Pedestrian_Event", "Incident", "Low_Activity"]
 FEATURE_RANGES = {
     "vehicle_count": (0, 90), "avg_vehicle_speed_kmph": (0, 90), "road_occupancy_pct": (0, 100), "pedestrian_count": (0, 70),
@@ -55,7 +55,7 @@ def _decode_segment(segment):
 def verify_state(token, kind, room, player):
     try:
         payload, signature = str(token or "").split(".", 1)
-        secret = os.getenv("CLEARWAY_STATE_SECRET") or os.getenv("MATCH_GATEWAY_SECRET") or os.getenv("SUPABASE_SECRET_KEY") or "clearway-local-state"
+        secret = os.getenv("CLEARWAY_STATE_SECRET") or os.getenv("MATCH_GATEWAY_SECRET") or "clearway-local-state"
         expected = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).digest()
         received = _decode_segment(signature)
         if not hmac.compare_digest(expected, received):
@@ -176,24 +176,18 @@ def final_prediction(model_name, features, rows, test_rows, truth):
 
 
 def _consume_evaluation(room, player):
-    url, key = os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SECRET_KEY")
-    if not url or not key:
+    if not DB_PATH.exists():
         return None
-    request = Request(
-        f"{url}/rest/v1/rpc/use_game_evaluation",
-        data=json.dumps({"room_pin": room, "player_name": player}).encode(),
-        headers={"Content-Type": "application/json", "apikey": key, "Authorization": f"Bearer {key}"},
-        method="POST",
-    )
-    try:
-        with urlopen(request, timeout=8) as response:
-            return int(json.loads(response.read().decode()))
-    except HTTPError as error:
-        try:
-            detail = json.loads(error.read().decode()).get("message", "Could not reserve evaluation")
-        except Exception:
-            detail = "Could not reserve evaluation"
-        raise RuntimeError(detail) from error
+    with sqlite3.connect(DB_PATH) as connection:
+        row = connection.execute("SELECT status FROM game_rooms WHERE pin = ? AND expires_at > ?", (room, int(__import__("time").time() * 1000))).fetchone()
+        if not row or row[0] != "started":
+            return None
+        connection.execute("INSERT OR IGNORE INTO game_evaluations (room_pin, player_name, used) VALUES (?, ?, 0)", (room, player))
+        connection.execute("UPDATE game_evaluations SET used = used + 1 WHERE room_pin = ? AND player_name = ? AND used < 8", (room, player))
+        used = connection.execute("SELECT used FROM game_evaluations WHERE room_pin = ? AND player_name = ?", (room, player)).fetchone()[0]
+        if used > 8:
+            raise RuntimeError("Evaluation limit reached")
+        return used
 
 
 def _outcome(score, emergency_feed=False):

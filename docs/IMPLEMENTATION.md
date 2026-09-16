@@ -5,7 +5,7 @@
 Operation Clearway is a browser-based multiplayer data-science game covering Events 2–5. Vercel serves the player, lobby, and host pages plus lightweight Node API routes. It deliberately **does not train models in production**: Event 5 creates a Kaggle Python cell from the team’s sealed choices. The optional scikit-learn evaluator is a local development tool only.
 
 ```text
-host.html ──POST /api/room──> Supabase game_rooms
+host.html ──POST /api/room──> SQLite game_rooms
                                   │
 index.html ──POST /api/room──> lobby.html ──poll──> game.html
                                                    │
@@ -20,7 +20,7 @@ index.html ──POST /api/room──> lobby.html ──poll──> game.html
 
 | Module | Implementation responsibility |
 | --- | --- |
-| `package.json` | Declares the ESM Node project, Node 20+ requirement, static build command, and the Node test command. |
+| `package.json` | Declares the ESM Node project, Node 22.5+ requirement, static build command, and the Node test command. |
 | `vercel.json` | Configures the Vercel routes. Data-backed Event 2–4 functions run in `bom1`, receive `data/traffic/**`, and have a 60-second cold-start-safe duration. `/api/health` rewrites to `api/health.js`. No Python function is deployed. |
 | `requirements-local.txt` | Development-only dependency declaration for the local scikit-learn evaluator. It is intentionally not named `requirements.txt`, so Vercel does not package SciPy/scikit-learn. |
 | `tools/local_ml_pipeline.py` | Development-only reference evaluator. It builds a real `SimpleImputer → StandardScaler → classifier` scikit-learn pipeline, runs five-fold stratified Macro F1, and can create a local 500-row submission. It is not part of the Vercel runtime. |
@@ -34,7 +34,7 @@ The active player flow uses the room and Event 2–4 routes; their state-changin
 | `api/_event.js` | internal | Loads and caches CSV/JSON game data, coerces telemetry numbers, exposes feature metadata and class definitions, creates deterministic Event 2 rows, and provides the ordered manual classifier. |
 | `api/_state.js` | internal | HMAC-signs Event 2–4 state tokens. `packState()` serializes the room, player, and sealed decision; `verifyState()` rejects altered or cross-player tokens. Production should set `CLEARWAY_STATE_SECRET`. |
 | `api/_gateway.js` | internal | Shared input cleaner, JSON response helper, fleet defaults, Redis helper, weighted rendezvous score, admission ticket signer, and reservation IDs. |
-| `api/room.js` | `POST /api/room` | Supabase-backed room authority. `create` makes a 6-digit room with host token and 4-hour expiry; `join` calls the database RPC; `get` returns public room state; `start` requires the host token. Requires `SUPABASE_URL` and `SUPABASE_SECRET_KEY`. |
+| `api/room.js` | `POST /api/room` | SQLite-backed room authority. `create` makes a 6-digit room with host token and 4-hour expiry; `join`, progress checkpoints, stage unlocks, and `start` are persisted in the local database. |
 | `api/mission.js` | `POST /api/mission` | Delivers public game metadata, Event 2 records/rules, features, preview rows, and Kaggle tuning defaults. It never exposes a training endpoint. |
 | `api/labels.js` | `POST /api/labels` | Validates Manual Override labels, applies the ordered rules from `_event.js`, scores `correct − wrong`, and seals a `manual` state token. |
 | `api/analyze.js` | `POST /api/analyze` | Maintains an HMAC-signed 10-credit investigation ledger. Provides stats, missingness, class-wise summaries, correlation matrices, and pair relationship bins. Reopening purchased evidence is free; answer-revealing feature importance is intentionally absent. |
@@ -43,7 +43,7 @@ The active player flow uses the room and Event 2–4 routes; their state-changin
 | `api/health.js` | `GET /api/health` | Minimal availability response with server timestamp. |
 | `api/camera.js` | legacy endpoint | Returns HTTP 410: Event 2 is tabular, not an image round. |
 | `api/recovery.js` | legacy endpoint | Returns HTTP 410: the earlier recovery event is outside the Events 2–5 scope. |
-| `api/join.js` | `POST /api/join` | Retained fleet-admission prototype. Orders healthy capacity-available fleets with weighted rendezvous routing and reserves a 30-second lease, atomically in Redis when configured. It is not used by the current Supabase room flow. |
+| `api/join.js` | `POST /api/join` | Retained fleet-admission prototype. Orders healthy capacity-available fleets with weighted rendezvous routing and reserves a 30-second lease, atomically in Redis when configured. It is not used by the current SQLite room flow. |
 | `api/heartbeat.js` | `POST /api/heartbeat` | Retained fleet-admission companion. Requires Redis and `x-fleet-key`; writes a 15-second fleet heartbeat. |
 
 ### State and scoring flow
@@ -93,9 +93,9 @@ The selected search spaces cover Decision Tree, Logistic Regression, K-Nearest N
 | `data/traffic/generation_metadata.json` | Mission metadata | Source-package generation and injected-corruption counts. |
 | `data/traffic/train_clean_16.csv`, `test_truth.csv` | local evaluator / organizer reference | Canonical train archive and final labels. They are not served by an HTTP route. For a real public competition, keep them out of the public repository and use an organizer-only scoring environment. |
 
-## Supabase module
+## SQLite module
 
-`supabase/room_schema.sql` creates the room persistence layer:
+`db/sqlite.js` creates the local room persistence layer in `data/clearway.sqlite`:
 
 - `game_rooms` stores PIN, host token, mission seed, room status, roster, and expiry.
 - `join_game_room()` locks the room row, rejects expired/started rooms, and appends a unique player.
@@ -117,11 +117,10 @@ Run the active Node suite with `npm test`. To use the local evaluator, install `
 
 | Variable | Needed by | Notes |
 | --- | --- | --- |
-| `SUPABASE_URL` | `api/room.js` | Supabase project URL. |
-| `SUPABASE_SECRET_KEY` | `api/room.js` | Server-only service-role key; never expose it in browser code. |
+| `CLEARWAY_DB_PATH` | `db/sqlite.js` | Optional path for the LAN server's SQLite database. |
 | `CLEARWAY_STATE_SECRET` | `_state.js` | Required in production to sign Event 2–4 seals independently of other secrets. |
 | `MATCH_GATEWAY_SECRET` | legacy fleet router and analysis fallback | Signs admission tickets and, if no explicit state secret is set, analysis state. |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | legacy fleet router | Enables atomic leases and heartbeat-aware capacity routing. |
 | `FLEET_HEARTBEAT_SECRET` | `heartbeat.js` | Required `x-fleet-key` value for fleet heartbeat writes. |
 
-Before a release: run `npm test`, `node --check public/game.js`, and `node --check public/kaggle-export.js`; confirm production has Supabase and signing secrets; create a host room; join with a player; and verify Event 5 downloads a model-specific Kaggle cell.
+Before a release: run `npm test`, `node --check public/game.js`, and `node --check public/kaggle-export.js`; start the standalone LAN server; create a host room; join with a player; and verify Event 5 downloads a model-specific Kaggle cell.

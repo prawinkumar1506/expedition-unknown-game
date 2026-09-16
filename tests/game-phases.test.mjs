@@ -81,8 +81,11 @@ test("Feature Hunt spends a signed 10-credit ledger and locks exactly ten channe
   assert.equal(stats.body.creditsRemaining, 9);
   const correlation = await invoke(analyzeHandler, { room, player, type: "correlation", analysisState: stats.body.analysisState });
   assert.equal(correlation.body.creditsRemaining, 7);
-  const bad = await invoke(featuresHandler, { room, player, features: event.features.slice(0, 9), analysisState: correlation.body.analysisState });
-  assert.equal(bad.statusCode, 400);
+  const completed = await invoke(featuresHandler, { room, player, features: event.features.slice(0, 9), analysisState: correlation.body.analysisState });
+  assert.equal(completed.statusCode, 200);
+  assert.equal(completed.body.selected.length, 10);
+  assert.equal(completed.body.autoSelected.length, 1);
+  assert.equal(completed.body.penalty, 2);
   const strongSelection = [...event.features.filter(feature => event.featureStrength[feature]?.intended_strength === "strong"), ...event.features.filter(feature => event.featureStrength[feature]?.intended_strength === "moderate").slice(0, 4)];
   const sealed = await invoke(featuresHandler, { room, player, features: strongSelection, analysisState: correlation.body.analysisState });
   assert.equal(sealed.statusCode, 200); assert.equal(sealed.body.selected.length, 10); assert.equal(sealed.body.strongCount, 6); assert.equal(sealed.body.moderateCount, 4); assert.equal(sealed.body.weakCount, 0); assert.equal(sealed.body.strongCount + sealed.body.moderateCount + sealed.body.weakCount, 10); assert.ok(sealed.body.featureState);

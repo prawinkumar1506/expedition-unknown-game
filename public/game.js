@@ -25,18 +25,47 @@ const request = async (path, body) => { const response = await fetch(path, { met
 
 let data, stage = "event1", highestStage = 0;
 let manualLabels = {}, manualLocked = false, manualState = "", manualResult = null, manualStatus = "";
-let manualTimeSpentSec = 0, manualTimerId = null, manualTimerStart = Date.now();
-let event1Result = null, event1Status = "", event1TimeSpentSec = 0, event1TimerId = null, event1TimerStart = Date.now(), event1Selections = [];
+let manualTimeSpentSec = 0, manualTimerId = null, manualTimerStart = 0;
+let event1Result = null, event1Status = "", event1TimeSpentSec = 0, event1TimerId = null, event1TimerStart = 0, event1Selections = [];
 let selectedFeatures = new Set(), analysisType = "stats", analysisFeature = "", analysisSecond = "", analysisState = "", analysisCredits = 10, findings = [], featureState = "", featureResult = null, featureStatus = "";
-let featureTimeSpentSec = 0, featureTimerId = null, featureTimerStart = Date.now();
+let featureTimeSpentSec = 0, featureTimerId = null, featureTimerStart = 0;
 let qualityPlan = null, repairs = { missingColumns: new Set(), outlierColumns: new Set(), labelRecords: new Set(), duplicateGroups: new Set() }, emergencyFeed = false, qualityState = "", qualityResult = null, qualityStatus = "";
-let qualityTimeSpentSec = 0, qualityTimerId = null, qualityTimerStart = Date.now();
+let qualityTimeSpentSec = 0, qualityTimerId = null, qualityTimerStart = 0;
 let model = "Decision Tree", tuning = normalizeTuning(), kaggleScript = "", forecastStatus = "", forecastLocked = false;
-let forecastTimeSpentSec = 0, forecastTimerId = null, forecastTimerStart = Date.now();
+let forecastTimeSpentSec = 0, forecastTimerId = null, forecastTimerStart = 0;
+let roomControl = { stageUnlocks: { global: ["event1"], players: {} } }, checkpointTimer = null;
 const FEATURE_TIMEOUT_SECONDS = 30 * 60;
 const QUALITY_TIMEOUT_SECONDS = 20 * 60;
 const EVENT1_TIMEOUT_SECONDS = 15 * 60;
 const FORECAST_TIMEOUT_SECONDS = 40 * 60;
+const stageStorageKey = `clearway-progress:${session?.room || "unknown"}:${session?.player || "unknown"}`;
+const stageIsUnlocked = name => roomControl.stageUnlocks?.global?.includes(name) || roomControl.stageUnlocks?.players?.[session.player]?.includes(name);
+const serializeState = () => ({ stage, highestStage, stageStartedAt: { event1: event1TimerStart, manual: manualTimerStart, features: featureTimerStart, quality: qualityTimerStart, forecast: forecastTimerStart }, manualLabels, manualLocked, manualState, manualResult, event1Result, event1Selections, analysisState, analysisCredits, findings, selectedFeatures: [...selectedFeatures], featureState, featureResult, qualityPlan, repairs: Object.fromEntries(Object.entries(repairs).map(([key, value]) => [key, [...value]])), emergencyFeed, qualityState, qualityResult, model, tuning, kaggleScript, forecastStatus, forecastLocked });
+const applyState = saved => {
+  if (!saved || typeof saved !== "object") return;
+  stage = saved.stage || stage; highestStage = Number(saved.highestStage || 0); manualLabels = saved.manualLabels || {}; manualLocked = Boolean(saved.manualLocked); manualState = saved.manualState || ""; manualResult = saved.manualResult || null; event1Result = saved.event1Result || null; event1Selections = saved.event1Selections || [];
+  analysisState = saved.analysisState || ""; analysisCredits = Number(saved.analysisCredits ?? 10); findings = saved.findings || []; selectedFeatures = new Set(saved.selectedFeatures || []); featureState = saved.featureState || ""; featureResult = saved.featureResult || null; qualityPlan = saved.qualityPlan || null;
+  repairs = { missingColumns: new Set(saved.repairs?.missingColumns || []), outlierColumns: new Set(saved.repairs?.outlierColumns || []), labelRecords: new Set(saved.repairs?.labelRecords || []), duplicateGroups: new Set(saved.repairs?.duplicateGroups || []) };
+  emergencyFeed = Boolean(saved.emergencyFeed); qualityState = saved.qualityState || ""; qualityResult = saved.qualityResult || null; model = saved.model || model; tuning = saved.tuning || tuning; kaggleScript = saved.kaggleScript || ""; forecastStatus = saved.forecastStatus || ""; forecastLocked = Boolean(saved.forecastLocked);
+  const starts = saved.stageStartedAt || {}; event1TimerStart = Number(starts.event1 || 0); manualTimerStart = Number(starts.manual || 0); featureTimerStart = Number(starts.features || 0); qualityTimerStart = Number(starts.quality || 0); forecastTimerStart = Number(starts.forecast || 0);
+};
+const checkpoint = () => {
+  const progress = serializeState();
+  localStorage.setItem(stageStorageKey, JSON.stringify(progress));
+  clearTimeout(checkpointTimer);
+  checkpointTimer = setTimeout(() => request("/api/room", { action: "saveProgress", room: session.room, player: session.player, progress }).catch(() => {}), 250);
+};
+const hydrate = room => {
+  roomControl = room || roomControl;
+  const serverState = room?.progress?.[session.player];
+  const localState = JSON.parse(localStorage.getItem(stageStorageKey) || "null");
+  applyState(serverState || localState);
+  if (!stageIsUnlocked(stage)) stage = stageOrder.find(name => stageIsUnlocked(name)) || "event1";
+  checkpoint();
+};
+const pollRoomControl = async () => { try { const result = await request("/api/room", { action: "get", pin: session.room }); roomControl = result.room; if (!stageIsUnlocked(stage)) render(); } catch {} };
+document.addEventListener("click", () => checkpoint());
+document.addEventListener("change", () => checkpoint());
 
 const formatCountdown = (secondsRemaining) => {
   const totalSeconds = Math.max(0, secondsRemaining);
@@ -155,11 +184,8 @@ const sealManualRound = async () => {
     manualStatus = manualResult.message;
     saveEvent2Result(manualResult);
     highestStage = Math.max(highestStage, 2);
-    if (stage === "manual") {
-      setStage("features");
-    } else {
-      render();
-    }
+    checkpoint();
+    render();
   } catch (error) {
     manualLocked = false;
     manualStatus = error.message;
@@ -169,10 +195,10 @@ const sealManualRound = async () => {
 
 const startEvent1Timer = () => {
   if (event1Result || event1TimerId) clearInterval(event1TimerId);
-  event1TimerStart = Date.now();
-  event1TimeSpentSec = 0;
+  if (!event1TimerStart || event1TimerStart > Date.now()) event1TimerStart = Date.now();
   event1TimerId = setInterval(() => {
-    event1TimeSpentSec = Math.min(EVENT1_TIMEOUT_SECONDS, Math.floor((Date.now() - event1TimerStart) / 1000));
+    event1TimeSpentSec = Math.min(EVENT1_TIMEOUT_SECONDS, Math.max(0, Math.floor((Date.now() - event1TimerStart) / 1000)));
+    if (event1TimeSpentSec % 5 === 0) checkpoint();
     if (event1TimeSpentSec >= EVENT1_TIMEOUT_SECONDS) {
       clearInterval(event1TimerId);
       if (!event1Result) {
@@ -194,14 +220,14 @@ const startEvent1Timer = () => {
 const startManualTimer = () => {
   if (manualLocked) return;
   if (manualTimerId) clearInterval(manualTimerId);
-  manualTimerStart = Date.now();
-  manualTimeSpentSec = 0;
+  if (!manualTimerStart || manualTimerStart > Date.now()) manualTimerStart = Date.now();
   manualTimerId = setInterval(() => {
-    manualTimeSpentSec = Math.min(15 * 60, Math.floor((Date.now() - manualTimerStart) / 1000));
+    manualTimeSpentSec = Math.min(15 * 60, Math.max(0, Math.floor((Date.now() - manualTimerStart) / 1000)));
+    if (manualTimeSpentSec % 5 === 0) checkpoint();
     if (manualTimeSpentSec >= 15 * 60) {
       clearInterval(manualTimerId);
       if (!manualLocked) {
-        manualStatus = "Time expired. Event 2 was auto-locked and advanced to the next stage.";
+        manualStatus = "Time expired. Event 2 was auto-locked. Wait for the host to open the next stage.";
         sealManualRound();
       }
       return;
@@ -215,14 +241,14 @@ const startManualTimer = () => {
 
 const startFeatureTimer = () => {
   if (featureResult || featureTimerId) clearInterval(featureTimerId);
-  featureTimerStart = Date.now();
-  featureTimeSpentSec = 0;
+  if (!featureTimerStart || featureTimerStart > Date.now()) featureTimerStart = Date.now();
   featureTimerId = setInterval(() => {
-    featureTimeSpentSec = Math.min(FEATURE_TIMEOUT_SECONDS, Math.floor((Date.now() - featureTimerStart) / 1000));
+    featureTimeSpentSec = Math.min(FEATURE_TIMEOUT_SECONDS, Math.max(0, Math.floor((Date.now() - featureTimerStart) / 1000)));
+    if (featureTimeSpentSec % 5 === 0) checkpoint();
     if (featureTimeSpentSec >= FEATURE_TIMEOUT_SECONDS) {
       clearInterval(featureTimerId);
-      if (!featureResult && selectedFeatures.size === 10) {
-        featureStatus = "Feature lock timed out. The current ten-channel selection was sealed automatically.";
+      if (!featureResult) {
+        featureStatus = "Feature lock timed out. The ten-channel selection was completed automatically.";
         sealFeatureRound();
       }
       return;
@@ -236,10 +262,10 @@ const startFeatureTimer = () => {
 
 const startQualityTimer = () => {
   if (qualityResult || qualityTimerId) clearInterval(qualityTimerId);
-  qualityTimerStart = Date.now();
-  qualityTimeSpentSec = 0;
+  if (!qualityTimerStart || qualityTimerStart > Date.now()) qualityTimerStart = Date.now();
   qualityTimerId = setInterval(() => {
-    qualityTimeSpentSec = Math.min(QUALITY_TIMEOUT_SECONDS, Math.floor((Date.now() - qualityTimerStart) / 1000));
+    qualityTimeSpentSec = Math.min(QUALITY_TIMEOUT_SECONDS, Math.max(0, Math.floor((Date.now() - qualityTimerStart) / 1000)));
+    if (qualityTimeSpentSec % 5 === 0) checkpoint();
     if (qualityTimeSpentSec >= QUALITY_TIMEOUT_SECONDS) {
       clearInterval(qualityTimerId);
       if (!qualityResult) {
@@ -257,10 +283,10 @@ const startQualityTimer = () => {
 
 const startForecastTimer = () => {
   if (forecastLocked || forecastTimerId) clearInterval(forecastTimerId);
-  forecastTimerStart = Date.now();
-  forecastTimeSpentSec = 0;
+  if (!forecastTimerStart || forecastTimerStart > Date.now()) forecastTimerStart = Date.now();
   forecastTimerId = setInterval(() => {
-    forecastTimeSpentSec = Math.min(FORECAST_TIMEOUT_SECONDS, Math.floor((Date.now() - forecastTimerStart) / 1000));
+    forecastTimeSpentSec = Math.min(FORECAST_TIMEOUT_SECONDS, Math.max(0, Math.floor((Date.now() - forecastTimerStart) / 1000)));
+    if (forecastTimeSpentSec % 5 === 0) checkpoint();
     if (forecastTimeSpentSec >= FORECAST_TIMEOUT_SECONDS) {
       clearInterval(forecastTimerId);
       forecastLocked = true;
@@ -280,14 +306,16 @@ const number = value => Number(value).toLocaleString(undefined, { maximumFractio
 const sectionIntro = (event, title, subtitle, beats) => `<section class="story-brief"><span>EVENT ${event} · ${esc(title.toUpperCase())}</span><h1>${esc(title.split(" ")[0])} <i>${esc(title.split(" ").slice(1).join(" "))}</i></h1><p>${esc(subtitle)}</p><div class="story-beats">${beats.map((beat, index) => `<span class="${index < stageOrder.indexOf(stage) ? "done" : index === stageOrder.indexOf(stage) ? "active" : ""}">${esc(beat)}</span>`).join("")}</div></section>`;
 
 function setStage(next) {
-  const index = stageOrder.indexOf(next); if (index < 0 || index > highestStage) return;
-  stage = next; render(); if (stage === "event1") startEvent1Timer(); if (stage === "manual") startManualTimer(); if (stage === "features") startFeatureTimer(); if (stage === "quality") startQualityTimer(); if (stage === "forecast") startForecastTimer(); window.scrollTo({ top: 0, behavior: "smooth" });
+  const index = stageOrder.indexOf(next); if (index < 0 || index > highestStage || !stageIsUnlocked(next)) return;
+  [event1TimerId, manualTimerId, featureTimerId, qualityTimerId, forecastTimerId].forEach(timerId => { if (timerId) clearInterval(timerId); });
+  event1TimerId = manualTimerId = featureTimerId = qualityTimerId = forecastTimerId = null;
+  stage = next; if (stage === "event1" && !event1Result) event1TimerStart = event1TimerStart || Date.now(); if (stage === "manual" && !manualResult) manualTimerStart = manualTimerStart || Date.now(); if (stage === "features" && !featureResult) featureTimerStart = featureTimerStart || Date.now(); if (stage === "quality" && !qualityResult) qualityTimerStart = qualityTimerStart || Date.now(); if (stage === "forecast") forecastTimerStart = forecastTimerStart || Date.now(); checkpoint(); render(); if (stage === "event1") startEvent1Timer(); if (stage === "manual") startManualTimer(); if (stage === "features") startFeatureTimer(); if (stage === "quality") startQualityTimer(); if (stage === "forecast") startForecastTimer(); window.scrollTo({ top: 0, behavior: "smooth" });
 }
 function updateChrome() {
   featureCredit.textContent = `${analysisCredits} / 10`;
   const spent = repairSpend(); repairCredit.textContent = `${Math.max(0, 15 - spent)} / 15`;
   evaluationCredit.textContent = `${tuning.trials} trials`;
-  document.querySelectorAll("[data-stage]").forEach(button => { const index = stageOrder.indexOf(button.dataset.stage); button.classList.toggle("active", button.dataset.stage === stage); button.classList.toggle("is-active", button.dataset.stage === stage); button.disabled = index > highestStage; });
+  document.querySelectorAll("[data-stage]").forEach(button => { const index = stageOrder.indexOf(button.dataset.stage); button.classList.toggle("active", button.dataset.stage === stage); button.classList.toggle("is-active", button.dataset.stage === stage); button.disabled = index > highestStage || !stageIsUnlocked(button.dataset.stage); });
 }
 
 function renderEvent1() {
@@ -319,10 +347,11 @@ function renderEvent1() {
 
 function renderManual() {
   const answered = Object.values(manualLabels).filter(Boolean).length;
+  const nextStageOpen = stageIsUnlocked("features");
   return `${sectionIntro("2", "Manual Override", "Fifty queued junction readings cannot wait for CLEARWAY to reboot. Apply the printed checklist from top to bottom; the first matching rule wins. Correct answers score +1; blank and wrong answers score 0.", ["Manual Override", "Feature Hunt", "Quality Lab", "Forecast"])}
     <section class="incident-ribbon"><div><small>QUEUED READINGS</small><b>50 tabular records</b></div><div><small>SCORING</small><b>+1 correct · 0 wrong · 0 blank</b></div><div><small>PROTOCOL</small><b>First matching rule wins</b></div><div><small>PROGRESS</small><b id="manual-progress">${answered}/50 answered</b></div><div><small>TIMER</small><b id="manual-timer-value">${formatManualCountdown()}</b></div></section>
     <section class="card"><div class="panel-title">Paper protocol <span>Read every rule in order</span></div><div class="protocol-grid">${data.manualRules.map(rule => `<article><span>RULE ${rule.priority}</span><b>${esc(rule.label)}</b><small>${esc(rule.test)}</small></article>`).join("")}</div></section>
-    <section class="card"><div class="panel-title">Manual review tray <span>Road occupancy is context; it is not a decision threshold in this protocol</span></div><div class="table-scroll"><table class="data-table manual-table"><thead><tr><th>ID</th><th>Vehicles</th><th>Avg speed</th><th>Occupancy</th><th>Pedestrians</th><th>Incident distance</th><th>Controller call</th></tr></thead><tbody>${data.manualRows.map(row => `<tr><th>${row.manual_id}</th><td>${row.vehicle_count}</td><td>${row.avg_vehicle_speed_kmph} km/h</td><td>${row.road_occupancy_pct}%</td><td>${row.pedestrian_count}</td><td>${row.incident_distance_m} m</td><td><select data-manual="${row.manual_id}" ${manualLocked ? "disabled" : ""}><option value="">Leave blank · 0 points</option>${data.manualClasses.map(label => `<option value="${label}" ${manualLabels[row.manual_id] === label ? "selected" : ""}>${label}</option>`).join("")}</select></td></tr>`).join("")}</tbody></table></div><div class="stage-actions"><span class="${manualResult ? "recovery-message success" : "recovery-message"}">${esc(manualStatus || "You may seal the ledger with blanks; guessing carries a real penalty.")}</span>${manualLocked ? `<button class="btn btn--primary" data-next="features">Open Event 3</button>` : `<button id="lock-manual" class="btn btn--primary">Seal Event 2 ledger</button>`}</div></section>`;
+    <section class="card"><div class="panel-title">Manual review tray <span>Road occupancy is context; it is not a decision threshold in this protocol</span></div><div class="table-scroll"><table class="data-table manual-table"><thead><tr><th>ID</th><th>Vehicles</th><th>Avg speed</th><th>Occupancy</th><th>Pedestrians</th><th>Incident distance</th><th>Controller call</th></tr></thead><tbody>${data.manualRows.map(row => `<tr><th>${row.manual_id}</th><td>${row.vehicle_count}</td><td>${row.avg_vehicle_speed_kmph} km/h</td><td>${row.road_occupancy_pct}%</td><td>${row.pedestrian_count}</td><td>${row.incident_distance_m} m</td><td><select data-manual="${row.manual_id}" ${manualLocked ? "disabled" : ""}><option value="">Leave blank · 0 points</option>${data.manualClasses.map(label => `<option value="${label}" ${manualLabels[row.manual_id] === label ? "selected" : ""}>${label}</option>`).join("")}</select></td></tr>`).join("")}</tbody></table></div><div class="stage-actions"><span class="${manualResult ? "recovery-message success" : "recovery-message"}">${esc(manualStatus || "You may seal the ledger with blanks; guessing carries a real penalty.")}</span>${manualLocked ? `<button class="btn btn--primary" data-next="features" ${nextStageOpen ? "" : "disabled"}>→ ${nextStageOpen ? "Open Event 3" : "Waiting for host to open Event 3"}</button>` : `<button id="lock-manual" class="btn btn--primary">Seal Event 2 ledger</button>`}</div></section>`;
 }
 
 function findingHtml(item) {
@@ -335,12 +364,12 @@ function findingHtml(item) {
 }
 
 function renderFeatures() {
-  const config = analysisCatalog.find(item => item[0] === analysisType), global = analysisType === "correlation", pair = analysisType === "relationship";
+  const config = analysisCatalog.find(item => item[0] === analysisType), global = analysisType === "correlation", pair = analysisType === "relationship", nextStageOpen = stageIsUnlocked("quality");
   return `${sectionIntro("3", "Feature Hunt", "Sixteen telemetry channels survived the Surge, but Central has only ten seats. Spend investigation credits, then lock exactly ten channels. That choice cannot be reopened.", ["Manual Override", "Feature Hunt", "Quality Lab", "Forecast"])}
     <section class="incident-ribbon"><div><small>CANDIDATE CHANNELS</small><b>16</b></div><div><small>LOCKED INPUTS</small><b>Exactly 10</b></div><div><small>INVESTIGATION POOL</small><b>${analysisCredits}/10 credits</b></div><div><small>TRAIN ARCHIVE</small><b>2,030 damaged rows</b></div><div><small>TIMER</small><b id="feature-timer-value">${formatFeatureCountdown()}</b></div></section>
     <div class="investigation-shell"><aside class="tool-catalog"><div class="panel-title">Investigation menu <span>10-credit pool</span></div>${analysisCatalog.map(item => `<button data-analysis-type="${item[0]}" class="${analysisType === item[0] ? "active" : ""}" ${featureResult ? "disabled" : ""}><span><b>${esc(item[1])}</b><small>${esc(item[3])}</small></span><strong>${item[2]} CR</strong></button>`).join("")}</aside>
       <section class="evidence-console"><div class="panel-title">Analysis console <span>${esc(config[1])}</span></div><div class="analysis-config"><div><span>SELECTED TOOL</span><b>${esc(config[1])}</b><p>${esc(config[3])}</p></div>${global ? "" : `<label>Primary channel<select id="analysis-feature">${data.features.map(name => `<option value="${name}" ${analysisFeature === name ? "selected" : ""}>${esc(featureName(name))}</option>`).join("")}</select></label>`}${pair ? `<label>Comparison channel<select id="analysis-second">${data.features.filter(name => name !== analysisFeature).map(name => `<option value="${name}" ${analysisSecond === name ? "selected" : ""}>${esc(featureName(name))}</option>`).join("")}</select></label>` : ""}<button id="run-analysis" class="btn btn--primary" ${featureResult || analysisCredits < config[2] ? "disabled" : ""}>Run · ${config[2]} credits</button></div><div class="analysis-status">${esc(featureStatus || "Purchased evidence can be reopened without spending again.")}</div><div class="findings">${findings.length ? findings.map(findingHtml).join("") : `<div class="empty-finding"><b>NO INVESTIGATION PURCHASED</b><span>Choose a tool and spend credits to reveal evidence.</span></div>`}</div></section></div>
-    <section class="selection-board"><div class="panel-title">Ten-channel lock <span>${selectedFeatures.size}/10 selected</span></div><div class="pick-grid">${data.features.map(name => `<button class="pick feature ${selectedFeatures.has(name) ? "chosen" : ""}" data-feature="${name}" ${featureResult ? "disabled" : ""}><b>${selectedFeatures.has(name) ? "✓" : "+"}</b><span>${esc(featureName(name))}<small>${esc(data.featureMeta[name].family)} channel</small></span></button>`).join("")}</div>${featureResult ? `<div class="feature-score"><strong>${featureResult.score}</strong><span>EVENT 3 SCORE</span><div><small>High-value seats</small><b>${featureResult.strongCount}/10</b></div><div><small>Credits spent</small><b>${featureResult.spent}/10</b></div></div><div class="stage-actions"><span class="recovery-message success">${esc(featureResult.message)}</span><button class="btn btn--primary" data-next="quality">Open Event 4</button></div>` : `<div class="feature-lock"><span>${esc(featureStatus || "Investigate first, then commit exactly ten channels.")}</span><b>${selectedFeatures.size}/10</b><button id="lock-features" class="btn btn--primary" ${selectedFeatures.size !== 10 ? "disabled" : ""}>Lock ten channels</button></div>`}</section>`;
+    <section class="selection-board"><div class="panel-title">Ten-channel lock <span>${selectedFeatures.size}/10 selected</span></div><div class="pick-grid">${data.features.map(name => `<button class="pick feature ${selectedFeatures.has(name) ? "chosen" : ""}" data-feature="${name}" ${featureResult ? "disabled" : ""}><b>${selectedFeatures.has(name) ? "✓" : "+"}</b><span>${esc(featureName(name))}<small>${esc(data.featureMeta[name].family)} channel</small></span></button>`).join("")}</div>${featureResult ? `<div class="feature-score"><strong>${featureResult.score}</strong><span>EVENT 3 SCORE</span><div><small>High-value seats</small><b>${featureResult.strongCount}/10</b></div><div><small>Credits spent</small><b>${featureResult.spent}/10</b></div></div><div class="stage-actions"><span class="recovery-message success">${esc(featureResult.message)}</span><button class="btn btn--primary" data-next="quality" ${nextStageOpen ? "" : "disabled"}>→ ${nextStageOpen ? "Open Event 4" : "Waiting for host to open Event 4"}</button></div>` : `<div class="feature-lock"><span>${esc(featureStatus || "Investigate first, then commit up to ten channels. Missing channels are completed with a penalty.")}</span><b>${selectedFeatures.size}/10</b><button id="lock-features" class="btn btn--primary">Lock selection</button></div>`}</section>`;
 }
 
 const sealFeatureRound = async () => {
@@ -351,11 +380,9 @@ const sealFeatureRound = async () => {
     featureStatus = featureResult.message;
     saveFeatureResult(featureResult);
     highestStage = Math.max(highestStage, 3);
-    if (stage === "features") {
-      setStage("quality");
-    } else {
-      render();
-    }
+    const planResponse = await request("/api/quality", { room: session.room, player: session.player, action: "plan", featureState });
+    qualityPlan = planResponse.plan;
+    render();
   } catch (error) {
     featureStatus = error.message;
     render();
@@ -480,7 +507,7 @@ function bind() {
   const second = document.querySelector("#analysis-second"); if (second) second.onchange = () => { analysisSecond = second.value; };
   const analyze = document.querySelector("#run-analysis"); if (analyze) analyze.onclick = async () => { analyze.disabled = true; try { const result = await request("/api/analyze", { room: session.room, player: session.player, type: analysisType, feature: analysisFeature, secondFeature: analysisSecond, analysisState }); analysisState = result.analysisState; analysisCredits = result.creditsRemaining; const key = `${analysisType}:${analysisFeature}:${analysisSecond}`; findings = [{ key, result: result.result }, ...findings.filter(item => item.key !== key)]; featureStatus = result.replayed ? "Evidence reopened; no credits charged." : `${result.cost} credits spent. ${result.creditsRemaining} remain.`; render(); } catch (error) { featureStatus = error.message; render(); } };
   document.querySelectorAll("[data-feature]").forEach(button => button.onclick = () => { const name = button.dataset.feature; if (selectedFeatures.has(name)) selectedFeatures.delete(name); else if (selectedFeatures.size < 10) selectedFeatures.add(name); render(); });
-  const lockFeatures = document.querySelector("#lock-features"); if (lockFeatures) lockFeatures.onclick = async () => { lockFeatures.disabled = true; try { featureResult = await request("/api/features", { room: session.room, player: session.player, features: [...selectedFeatures], analysisState }); featureState = featureResult.featureState; featureStatus = featureResult.message; saveFeatureResult(featureResult); highestStage = Math.max(highestStage, 3); const response = await request("/api/quality", { room: session.room, player: session.player, action: "plan", featureState }); qualityPlan = response.plan; render(); } catch (error) { featureStatus = error.message; render(); } };
+  const lockFeatures = document.querySelector("#lock-features"); if (lockFeatures) lockFeatures.onclick = async () => { lockFeatures.disabled = true; await sealFeatureRound(); };
   const emergency = document.querySelector("#toggle-emergency"); if (emergency) emergency.onclick = () => { emergencyFeed = !emergencyFeed; qualityStatus = emergencyFeed ? "Emergency feed staged. Seal the event to make the swap irreversible." : "Emergency feed deselected."; render(); };
   document.querySelectorAll("[data-repair-kind]").forEach(button => button.onclick = () => toggleRepair(button.dataset.repairKind, button.dataset.repairId));
   const sealQuality = document.querySelector("#seal-quality"); if (sealQuality) sealQuality.onclick = async () => { sealQuality.disabled = true; try { qualityResult = await request("/api/quality", { room: session.room, player: session.player, action: "seal", featureState, emergencyFeed, repairs: Object.fromEntries(Object.entries(repairs).map(([key, value]) => [key, [...value]])) }); qualityState = qualityResult.qualityState; qualityStatus = qualityResult.message; saveQualityResult(qualityResult); highestStage = Math.max(highestStage, 4); render(); } catch (error) { qualityStatus = error.message; render(); } };
@@ -493,10 +520,16 @@ function bind() {
 
 download.onclick = () => { if (!kaggleScript) return; const url = URL.createObjectURL(new Blob([kaggleScript], { type: "application/x-ipynb+json" })), link = document.createElement("a"); link.href = url; link.download = kaggleFilename(model, "ipynb"); link.click(); URL.revokeObjectURL(url); };
 document.querySelectorAll("[data-stage]").forEach(button => button.onclick = () => setStage(button.dataset.stage));
-request("/api/mission", session).then(result => {
-  data = result; analysisFeature = data.features[0]; analysisSecond = data.features[1];
+window.addEventListener("beforeunload", () => checkpoint());
+setInterval(() => checkpoint(), 5000);
+Promise.all([request("/api/mission", session), request("/api/room", { action: "get", pin: session.room })]).then(([result, roomResult]) => {
+  data = result; analysisFeature = data.features[0]; analysisSecond = data.features[1]; hydrate(roomResult.room);
   statusText.textContent = `${result.mission.scope.toUpperCase()} · ROOM ${session.room} · ${result.recordCounts.trainingDelivered} TRAIN / ${result.recordCounts.finalTest} TEST`;
   render();
   if (stage === "event1") startEvent1Timer();
-  else startManualTimer();
+  else if (stage === "manual") startManualTimer();
+  else if (stage === "features") startFeatureTimer();
+  else if (stage === "quality") startQualityTimer();
+  else startForecastTimer();
+  setInterval(pollRoomControl, 5000);
 }).catch(error => box.innerHTML = `<div class="error-box">CLEARWAY console could not open: ${esc(error.message)}</div>`);
