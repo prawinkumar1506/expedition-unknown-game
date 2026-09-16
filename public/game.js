@@ -7,9 +7,7 @@ const box = document.querySelector("#workspace"), download = document.querySelec
 const featureCredit = document.querySelector("#f-credit"), repairCredit = document.querySelector("#r-credit"), evaluationCredit = document.querySelector("#e-credit");
 const stageOrder = ["event1", "manual", "features", "quality", "forecast"];
 const analysisCatalog = [
-  ["stats", "Basic channel statistics", 1, "Mean, median, deviation, range and missing percentage."],
-  ["missing", "Missing-value analysis", 1, "Null count and affected training records."],
-  ["classwise", "Class-wise distribution", 2, "Compare one channel across all five traffic classes."],
+  ["classprofiles", "Class profiles", 2, "Compare count, missingness, mean, and deviation across all traffic classes."],
   ["correlation", "Correlation analysis", 2, "Inspect redundancy across all sixteen channels."],
   ["relationship", "Channel relationship view", 2, "Compare two channels across five value bands."]
 ];
@@ -27,7 +25,7 @@ let data, stage = "event1", highestStage = 0;
 let manualLabels = {}, manualLocked = false, manualState = "", manualResult = null, manualStatus = "";
 let manualTimeSpentSec = 0, manualTimerId = null, manualTimerStart = 0;
 let event1Result = null, event1Status = "", event1TimeSpentSec = 0, event1TimerId = null, event1TimerStart = 0, event1Selections = [];
-let selectedFeatures = new Set(), analysisType = "stats", analysisFeature = "", analysisSecond = "", analysisState = "", analysisCredits = 10, findings = [], featureState = "", featureResult = null, featureStatus = "";
+let selectedFeatures = new Set(), analysisType = "classprofiles", analysisFeature = "", analysisSecond = "", analysisState = "", analysisCredits = 10, findings = [], featureState = "", featureResult = null, featureStatus = "";
 let featureTimeSpentSec = 0, featureTimerId = null, featureTimerStart = 0;
 let qualityPlan = null, repairs = { missingColumns: new Set(), outlierColumns: new Set(), labelRecords: new Set(), duplicateGroups: new Set() }, emergencyFeed = false, qualityState = "", qualityResult = null, qualityStatus = "";
 let qualityTimeSpentSec = 0, qualityTimerId = null, qualityTimerStart = 0;
@@ -53,7 +51,7 @@ const checkpoint = () => {
   const progress = serializeState();
   localStorage.setItem(stageStorageKey, JSON.stringify(progress));
   clearTimeout(checkpointTimer);
-  checkpointTimer = setTimeout(() => request("/api/room", { action: "saveProgress", room: session.room, player: session.player, progress }).catch(() => {}), 250);
+  checkpointTimer = setTimeout(() => request("/api/room", { action: "saveProgress", pin: session.room, player: session.player, progress }).catch(() => {}), 250);
 };
 const hydrate = room => {
   roomControl = room || roomControl;
@@ -63,7 +61,7 @@ const hydrate = room => {
   if (!stageIsUnlocked(stage)) stage = stageOrder.find(name => stageIsUnlocked(name)) || "event1";
   checkpoint();
 };
-const pollRoomControl = async () => { try { const result = await request("/api/room", { action: "get", pin: session.room }); roomControl = result.room; if (!stageIsUnlocked(stage)) render(); } catch {} };
+const pollRoomControl = async () => { try { const result = await request("/api/room", { action: "get", pin: session.room }); const previousUnlocks = JSON.stringify(roomControl.stageUnlocks || {}); roomControl = result.room; if (previousUnlocks !== JSON.stringify(roomControl.stageUnlocks || {})) render(); } catch {} };
 document.addEventListener("click", () => checkpoint());
 document.addEventListener("change", () => checkpoint());
 
@@ -79,31 +77,27 @@ const formatQualityCountdown = () => formatCountdown(QUALITY_TIMEOUT_SECONDS - q
 const formatEvent1Countdown = () => formatCountdown(EVENT1_TIMEOUT_SECONDS - event1TimeSpentSec);
 const formatForecastCountdown = () => formatCountdown(FORECAST_TIMEOUT_SECONDS - forecastTimeSpentSec);
 
-const saveEvent1Result = result => {
-  const storageKey = "clearway-event1-scores";
+const persistScore = async (stageName, storageKey, payload) => {
+  await request("/api/scores", { room: session.room, player: session.player, stage: stageName, payload });
   const roomScores = JSON.parse(localStorage.getItem(storageKey) || "{}");
   const roomKey = session.room;
   const teamScores = Array.isArray(roomScores[roomKey]) ? roomScores[roomKey] : [];
   const index = teamScores.findIndex(item => item.player === session.player);
-  const payload = {
-    player: session.player,
-    passed: Boolean(result.passed),
-    status: result.status || (result.passed ? "completed" : "failed"),
-    timeTakenSeconds: Number(result.timeTakenSeconds || event1TimeSpentSec),
-    submittedAt: Date.now()
-  };
   if (index >= 0) teamScores[index] = payload; else teamScores.push(payload);
   roomScores[roomKey] = teamScores;
   localStorage.setItem(storageKey, JSON.stringify(roomScores));
-  window.dispatchEvent(new CustomEvent("clearway-event1-score", { detail: { room: roomKey, payload } }));
+  window.dispatchEvent(new CustomEvent(`clearway-${stageName}-score`, { detail: { room: roomKey, payload } }));
 };
 
-const saveEvent2Result = result => {
-  const storageKey = "clearway-event2-scores";
-  const roomScores = JSON.parse(localStorage.getItem(storageKey) || "{}");
-  const roomKey = session.room;
-  const teamScores = Array.isArray(roomScores[roomKey]) ? roomScores[roomKey] : [];
-  const index = teamScores.findIndex(item => item.player === session.player);
+const saveEvent1Result = async result => persistScore("event1", "clearway-event1-scores", {
+  player: session.player,
+  passed: Boolean(result.passed),
+  status: result.status || (result.passed ? "completed" : "failed"),
+  timeTakenSeconds: Number(result.timeTakenSeconds || event1TimeSpentSec),
+  submittedAt: Date.now()
+});
+
+const saveEvent2Result = async result => {
   const payload = {
     player: session.player,
     correct: result.correct,
@@ -114,18 +108,10 @@ const saveEvent2Result = result => {
     timeTakenSeconds: Number(result.timeTakenSeconds || manualTimeSpentSec),
     submittedAt: Date.now()
   };
-  if (index >= 0) teamScores[index] = payload; else teamScores.push(payload);
-  roomScores[roomKey] = teamScores;
-  localStorage.setItem(storageKey, JSON.stringify(roomScores));
-  window.dispatchEvent(new CustomEvent("clearway-event2-score", { detail: { room: roomKey, payload } }));
+  return persistScore("manual", "clearway-event2-scores", payload);
 };
 
-const saveFeatureResult = result => {
-  const storageKey = "clearway-feature-scores";
-  const roomScores = JSON.parse(localStorage.getItem(storageKey) || "{}");
-  const roomKey = session.room;
-  const teamScores = Array.isArray(roomScores[roomKey]) ? roomScores[roomKey] : [];
-  const index = teamScores.findIndex(item => item.player === session.player);
+const saveFeatureResult = async result => {
   const payload = {
     player: session.player,
     strong: Number(result.strongCount || 0),
@@ -138,18 +124,10 @@ const saveFeatureResult = result => {
     timeTakenSeconds: Number(result.timeTakenSeconds || featureTimeSpentSec),
     submittedAt: Date.now()
   };
-  if (index >= 0) teamScores[index] = payload; else teamScores.push(payload);
-  roomScores[roomKey] = teamScores;
-  localStorage.setItem(storageKey, JSON.stringify(roomScores));
-  window.dispatchEvent(new CustomEvent("clearway-feature-score", { detail: { room: roomKey, payload } }));
+  return persistScore("features", "clearway-feature-scores", payload);
 };
 
-const saveQualityResult = result => {
-  const storageKey = "clearway-quality-scores";
-  const roomScores = JSON.parse(localStorage.getItem(storageKey) || "{}");
-  const roomKey = session.room;
-  const teamScores = Array.isArray(roomScores[roomKey]) ? roomScores[roomKey] : [];
-  const index = teamScores.findIndex(item => item.player === session.player);
+const saveQualityResult = async result => {
   const payload = {
     player: session.player,
     strong: Number(featureResult?.strongCount || 0),
@@ -163,10 +141,7 @@ const saveQualityResult = result => {
     emergencyFeed: Boolean(result.emergencyFeed),
     submittedAt: Date.now()
   };
-  if (index >= 0) teamScores[index] = payload; else teamScores.push(payload);
-  roomScores[roomKey] = teamScores;
-  localStorage.setItem(storageKey, JSON.stringify(roomScores));
-  window.dispatchEvent(new CustomEvent("clearway-quality-score", { detail: { room: roomKey, payload } }));
+  return persistScore("quality", "clearway-quality-scores", payload);
 };
 
 const sealManualRound = async () => {
@@ -182,7 +157,7 @@ const sealManualRound = async () => {
     });
     manualState = manualResult.manualState;
     manualStatus = manualResult.message;
-    saveEvent2Result(manualResult);
+    await saveEvent2Result(manualResult);
     highestStage = Math.max(highestStage, 2);
     checkpoint();
     render();
@@ -204,7 +179,7 @@ const startEvent1Timer = () => {
       if (!event1Result) {
         event1Result = { passed: false, status: "failed", timeTakenSeconds: EVENT1_TIMEOUT_SECONDS };
         event1Status = "15 minutes expired. Archive reconstruction failed. Event 2 opened with the supplied training data.";
-        saveEvent1Result(event1Result);
+        saveEvent1Result(event1Result).catch(() => {});
         highestStage = Math.max(highestStage, 1);
         setStage("manual");
       }
@@ -302,6 +277,19 @@ const startForecastTimer = () => {
 };
 
 const featureName = name => data?.featureMeta?.[name]?.label || String(name).replaceAll("_", " ");
+const featureFamily = name => data?.featureMeta?.[name]?.family || "telemetry";
+const displayFeatures = () => {
+  const features = [...(data?.features || [])];
+  let seed = `${session?.room || "room"}:${session?.player || "player"}`;
+  for (const character of seed) seed = `${(seed.charCodeAt(0) ^ character.charCodeAt(0))}${seed.slice(1)}`;
+  let state = [...seed].reduce((sum, character) => (sum * 31 + character.charCodeAt(0)) >>> 0, 2166136261);
+  for (let index = features.length - 1; index > 0; index--) {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    const swapIndex = state % (index + 1);
+    [features[index], features[swapIndex]] = [features[swapIndex], features[index]];
+  }
+  return features;
+};
 const number = value => Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
 const sectionIntro = (event, title, subtitle, beats) => `<section class="story-brief"><span>EVENT ${event} · ${esc(title.toUpperCase())}</span><h1>${esc(title.split(" ")[0])} <i>${esc(title.split(" ").slice(1).join(" "))}</i></h1><p>${esc(subtitle)}</p><div class="story-beats">${beats.map((beat, index) => `<span class="${index < stageOrder.indexOf(stage) ? "done" : index === stageOrder.indexOf(stage) ? "active" : ""}">${esc(beat)}</span>`).join("")}</div></section>`;
 
@@ -338,10 +326,10 @@ function renderEvent1() {
     <section class="card"><div class="panel-title">Recovered archive bundle <span>Pull together the fragments that belong to the final JTU-7 recovery window</span></div>
       <div class="selection-board">
         <div class="panel-title">Available recovery fragments <span>${event1Selections.length}/3 selected</span></div>
-        <div class="pick-grid">${archiveCandidates.map(name => `<button class="pick feature ${event1Selections.includes(name) ? "chosen" : ""}" data-event1-choice="${name}" type="button"><b>${event1Selections.includes(name) ? "✓" : "+"}</b><span class="pick-text"><strong class="pick-name">${esc(name)}</strong><small>recovery fragment</small></span></button>`).join("")}</div>
+        <div class="pick-grid">${archiveCandidates.map(name => `<button class="pick feature ${event1Selections.includes(name) ? "chosen" : ""}" data-event1-choice="${name}" type="button" ${event1Result ? "disabled" : ""}><b>${event1Selections.includes(name) ? "✓" : "+"}</b><span class="pick-text"><strong class="pick-name">${esc(name)}</strong><small>recovery fragment</small></span></button>`).join("")}</div>
       </div>
       <div class="analysis-status">${esc(event1Status || "Choose the three fragments that belong to the final JTU-7 gen3 bundle. No upload box is required; the archive is already staged in the project folder and it must be reconstructed from the valid names alone.")}</div>
-      <div class="stage-actions"><button id="event1-submit" class="btn btn--primary" ${event1Selections.length !== 3 ? "disabled" : ""}>Submit archive</button></div>
+      <div class="stage-actions">${event1Result ? `<span class="recovery-message success">Archive ${event1Result.passed ? "completed" : "failed"}. This round is locked${stageIsUnlocked("manual") ? "." : "; waiting for the host to open Event 2."}</span>${stageIsUnlocked("manual") ? `<button class="btn btn--primary" data-next="manual">Open Event 2</button>` : ""}` : `<button id="event1-submit" class="btn btn--primary" ${event1Selections.length !== 3 ? "disabled" : ""}>Submit archive</button>`}</div>
     </section>`;
 }
 
@@ -356,20 +344,19 @@ function renderManual() {
 
 function findingHtml(item) {
   const result = item.result;
-  if (result.kind === "stats") return `<article class="finding"><header><b>${esc(featureName(result.feature))}</b><span>basic statistics</span></header><div class="metric-grid">${["mean", "median", "stdDev", "min", "max"].map(key => `<div><small>${key}</small><strong>${number(result.summary[key])}</strong></div>`).join("")}</div></article>`;
-  if (result.kind === "missing") return `<article class="finding"><header><b>${esc(featureName(result.feature))}</b><span>missing values</span></header><div class="finding-callout"><strong>${result.missingCount}</strong><span>missing cells · ${result.missingPct}% of ${result.recordCount || 2030} delivered rows</span></div></article>`;
-  if (result.kind === "classwise") return `<article class="finding"><header><b>${esc(featureName(result.feature))}</b><span>class-wise distribution</span></header><table class="analysis-table"><thead><tr><th>Class</th><th>Mean</th><th>Std dev</th><th>Missing</th></tr></thead><tbody>${result.classes.map(row => `<tr><th>${esc(row.label)}</th><td>${number(row.mean)}</td><td>${number(row.stdDev)}</td><td>${row.missingCount}</td></tr>`).join("")}</tbody></table></article>`;
-  if (result.kind === "correlation") return `<article class="finding"><header><b>All 16 channels</b><span>correlation matrix</span></header><div class="matrix-scroll"><table class="matrix-table"><thead><tr><th></th>${result.features.map(name => `<th>${esc(featureName(name))}</th>`).join("")}</tr></thead><tbody>${result.features.map((name, i) => `<tr><th>${esc(featureName(name))}</th>${result.matrix[i].map(value => `<td>${number(value)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></article>`;
+  if (result.kind === "classprofiles") return `<article class="finding"><header><b>${esc(featureName(result.feature))}</b><span>class profiles</span></header><table class="analysis-table"><thead><tr><th>Observed class</th><th>Count</th><th>Missing %</th><th>Mean</th><th>Std dev</th></tr></thead><tbody>${result.classes.map(row => `<tr><th>${esc(row.label)}</th><td>${row.count}</td><td>${number(row.missingPct)}</td><td>${number(row.mean)}</td><td>${number(row.stdDev)}</td></tr>`).join("")}</tbody></table></article>`;
+  if (result.kind === "correlation") return `<article class="finding"><header><b>All ${result.features.length} channels</b><span>correlation matrix</span></header><div class="matrix-scroll"><table class="matrix-table"><thead><tr><th></th>${result.features.map(name => `<th>${esc(featureName(name))}</th>`).join("")}</tr></thead><tbody>${result.features.map((name, i) => `<tr><th>${esc(featureName(name))}</th>${result.matrix[i].map(value => `<td>${number(value)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></article>`;
   return `<article class="finding"><header><b>${esc(featureName(result.feature))} × ${esc(featureName(result.secondFeature))}</b><span>relationship</span></header><div class="relationship-score">Pearson correlation <strong>${number(result.coefficient)}</strong></div><div class="bin-chart">${result.bins.map(bin => `<div><span>${number(bin.from)}–${number(bin.to)}</span><i><em style="width:${Math.min(100, Math.abs(bin.mean || 0))}%"></em></i><b>${number(bin.mean)}</b></div>`).join("")}</div></article>`;
 }
 
 function renderFeatures() {
-  const config = analysisCatalog.find(item => item[0] === analysisType), global = analysisType === "correlation", pair = analysisType === "relationship", nextStageOpen = stageIsUnlocked("quality");
+  const config = analysisCatalog.find(item => item[0] === analysisType) || analysisCatalog[0], global = analysisType === "correlation", pair = analysisType === "relationship", nextStageOpen = stageIsUnlocked("quality");
+  const orderedFeatures = displayFeatures();
   return `${sectionIntro("3", "Feature Hunt", "Sixteen telemetry channels survived the Surge, but Central has only ten seats. Spend investigation credits, then lock exactly ten channels. That choice cannot be reopened.", ["Manual Override", "Feature Hunt", "Quality Lab", "Forecast"])}
-    <section class="incident-ribbon"><div><small>CANDIDATE CHANNELS</small><b>16</b></div><div><small>LOCKED INPUTS</small><b>Exactly 10</b></div><div><small>INVESTIGATION POOL</small><b>${analysisCredits}/10 credits</b></div><div><small>TRAIN ARCHIVE</small><b>2,030 damaged rows</b></div><div><small>TIMER</small><b id="feature-timer-value">${formatFeatureCountdown()}</b></div></section>
+    <section class="incident-ribbon"><div><small>CANDIDATE CHANNELS</small><b>${data.features.length}</b></div><div><small>LOCKED INPUTS</small><b>Exactly 10</b></div><div><small>INVESTIGATION POOL</small><b>${analysisCredits}/10 credits</b></div><div><small>TRAIN ARCHIVE</small><b>${data.recordCounts.trainingDelivered} damaged rows</b></div><div><small>TIMER</small><b id="feature-timer-value">${formatFeatureCountdown()}</b></div></section>
     <div class="investigation-shell"><aside class="tool-catalog"><div class="panel-title">Investigation menu <span>10-credit pool</span></div>${analysisCatalog.map(item => `<button data-analysis-type="${item[0]}" class="${analysisType === item[0] ? "active" : ""}" ${featureResult ? "disabled" : ""}><span><b>${esc(item[1])}</b><small>${esc(item[3])}</small></span><strong>${item[2]} CR</strong></button>`).join("")}</aside>
       <section class="evidence-console"><div class="panel-title">Analysis console <span>${esc(config[1])}</span></div><div class="analysis-config"><div><span>SELECTED TOOL</span><b>${esc(config[1])}</b><p>${esc(config[3])}</p></div>${global ? "" : `<label>Primary channel<select id="analysis-feature">${data.features.map(name => `<option value="${name}" ${analysisFeature === name ? "selected" : ""}>${esc(featureName(name))}</option>`).join("")}</select></label>`}${pair ? `<label>Comparison channel<select id="analysis-second">${data.features.filter(name => name !== analysisFeature).map(name => `<option value="${name}" ${analysisSecond === name ? "selected" : ""}>${esc(featureName(name))}</option>`).join("")}</select></label>` : ""}<button id="run-analysis" class="btn btn--primary" ${featureResult || analysisCredits < config[2] ? "disabled" : ""}>Run · ${config[2]} credits</button></div><div class="analysis-status">${esc(featureStatus || "Purchased evidence can be reopened without spending again.")}</div><div class="findings">${findings.length ? findings.map(findingHtml).join("") : `<div class="empty-finding"><b>NO INVESTIGATION PURCHASED</b><span>Choose a tool and spend credits to reveal evidence.</span></div>`}</div></section></div>
-    <section class="selection-board"><div class="panel-title">Ten-channel lock <span>${selectedFeatures.size}/10 selected</span></div><div class="pick-grid">${data.features.map(name => `<button class="pick feature ${selectedFeatures.has(name) ? "chosen" : ""}" data-feature="${name}" ${featureResult ? "disabled" : ""}><b>${selectedFeatures.has(name) ? "✓" : "+"}</b><span>${esc(featureName(name))}<small>${esc(data.featureMeta[name].family)} channel</small></span></button>`).join("")}</div>${featureResult ? `<div class="feature-score"><strong>${featureResult.score}</strong><span>EVENT 3 SCORE</span><div><small>High-value seats</small><b>${featureResult.strongCount}/10</b></div><div><small>Credits spent</small><b>${featureResult.spent}/10</b></div></div><div class="stage-actions"><span class="recovery-message success">${esc(featureResult.message)}</span><button class="btn btn--primary" data-next="quality" ${nextStageOpen ? "" : "disabled"}>→ ${nextStageOpen ? "Open Event 4" : "Waiting for host to open Event 4"}</button></div>` : `<div class="feature-lock"><span>${esc(featureStatus || "Investigate first, then commit up to ten channels. Missing channels are completed with a penalty.")}</span><b>${selectedFeatures.size}/10</b><button id="lock-features" class="btn btn--primary">Lock selection</button></div>`}</section>`;
+    <section class="selection-board"><div class="panel-title">Ten-channel lock <span>${selectedFeatures.size}/10 selected</span></div><div class="pick-grid">${orderedFeatures.map(name => `<button class="pick feature ${selectedFeatures.has(name) ? "chosen" : ""}" data-feature="${name}" ${featureResult ? "disabled" : ""}><b>${selectedFeatures.has(name) ? "✓" : "+"}</b><span>${esc(featureName(name))}<small>${esc(featureFamily(name))} channel</small></span></button>`).join("")}</div>${featureResult ? `<div class="feature-score"><strong>${featureResult.score}</strong><span>EVENT 3 SCORE</span><div><small>High-value seats</small><b>${featureResult.strongCount}/10</b></div><div><small>Credits spent</small><b>${featureResult.spent}/10</b></div></div><div class="stage-actions"><span class="recovery-message success">${esc(featureResult.message)}</span><button class="btn btn--primary" data-next="quality" ${nextStageOpen ? "" : "disabled"}>→ ${nextStageOpen ? "Open Event 4" : "Waiting for host to open Event 4"}</button></div>` : `<div class="feature-lock"><span>${esc(featureStatus || "Investigate first, then commit up to ten channels. Missing channels are completed with a penalty.")}</span><b>${selectedFeatures.size}/10</b><button id="lock-features" class="btn btn--primary">Lock selection</button></div>`}</section>`;
 }
 
 const sealFeatureRound = async () => {
@@ -378,7 +365,7 @@ const sealFeatureRound = async () => {
     featureResult = await request("/api/features", { room: session.room, player: session.player, features: [...selectedFeatures], analysisState });
     featureState = featureResult.featureState;
     featureStatus = featureResult.message;
-    saveFeatureResult(featureResult);
+    await saveFeatureResult(featureResult);
     highestStage = Math.max(highestStage, 3);
     const planResponse = await request("/api/quality", { room: session.room, player: session.player, action: "plan", featureState });
     qualityPlan = planResponse.plan;
@@ -403,7 +390,7 @@ const sealQualityRound = async () => {
     });
     qualityState = qualityResult.qualityState;
     qualityStatus = qualityResult.message;
-    saveQualityResult(qualityResult);
+    await saveQualityResult(qualityResult);
     highestStage = Math.max(highestStage, 4);
     if (stage === "quality") {
       setStage("forecast");
@@ -482,15 +469,20 @@ function bind() {
       render();
       return;
     }
+    event1TimeSpentSec = Math.min(EVENT1_TIMEOUT_SECONDS, Math.max(0, Math.floor((Date.now() - event1TimerStart) / 1000)));
+    clearInterval(event1TimerId);
+    event1TimerId = null;
+    event1Submit.disabled = true;
     try {
       const result = await request("/api/recovery", { room: session.room, player: session.player, files: names, timeTakenSeconds: event1TimeSpentSec });
       event1Result = { passed: Boolean(result.passed), status: result.status || "completed", timeTakenSeconds: Number(result.timeTakenSeconds || event1TimeSpentSec) };
       event1Status = result.message || "Archive reconstructed successfully. The final JTU-7 gen3 bundle was verified.";
-      saveEvent1Result(event1Result);
+      await saveEvent1Result(event1Result);
       highestStage = Math.max(highestStage, 1);
-      setStage("manual");
+      render();
     } catch (error) {
       event1Status = error.message || "The archive bundle is invalid.";
+      startEvent1Timer();
       render();
     }
   };
@@ -505,12 +497,12 @@ function bind() {
   document.querySelectorAll("[data-analysis-type]").forEach(button => button.onclick = () => { analysisType = button.dataset.analysisType; featureStatus = ""; render(); });
   const primary = document.querySelector("#analysis-feature"); if (primary) primary.onchange = () => { analysisFeature = primary.value; if (analysisSecond === analysisFeature) analysisSecond = data.features.find(name => name !== analysisFeature); render(); };
   const second = document.querySelector("#analysis-second"); if (second) second.onchange = () => { analysisSecond = second.value; };
-  const analyze = document.querySelector("#run-analysis"); if (analyze) analyze.onclick = async () => { analyze.disabled = true; try { const result = await request("/api/analyze", { room: session.room, player: session.player, type: analysisType, feature: analysisFeature, secondFeature: analysisSecond, analysisState }); analysisState = result.analysisState; analysisCredits = result.creditsRemaining; const key = `${analysisType}:${analysisFeature}:${analysisSecond}`; findings = [{ key, result: result.result }, ...findings.filter(item => item.key !== key)]; featureStatus = result.replayed ? "Evidence reopened; no credits charged." : `${result.cost} credits spent. ${result.creditsRemaining} remain.`; render(); } catch (error) { featureStatus = error.message; render(); } };
+  const analyze = document.querySelector("#run-analysis"); if (analyze) analyze.onclick = async () => { analyze.disabled = true; try { if (!analysisCatalog.some(item => item[0] === analysisType)) analysisType = "classprofiles"; const result = await request("/api/analyze", { room: session.room, player: session.player, type: analysisType, feature: analysisFeature, secondFeature: analysisSecond, analysisState }); analysisState = result.analysisState; analysisCredits = result.creditsRemaining; const key = `${analysisType}:${analysisFeature}:${analysisSecond}`; findings = [{ key, result: result.result }, ...findings.filter(item => item.key !== key)]; featureStatus = result.replayed ? "Evidence reopened; no credits charged." : `${result.cost} credits spent. ${result.creditsRemaining} remain.`; render(); } catch (error) { featureStatus = error.message; render(); } };
   document.querySelectorAll("[data-feature]").forEach(button => button.onclick = () => { const name = button.dataset.feature; if (selectedFeatures.has(name)) selectedFeatures.delete(name); else if (selectedFeatures.size < 10) selectedFeatures.add(name); render(); });
   const lockFeatures = document.querySelector("#lock-features"); if (lockFeatures) lockFeatures.onclick = async () => { lockFeatures.disabled = true; await sealFeatureRound(); };
   const emergency = document.querySelector("#toggle-emergency"); if (emergency) emergency.onclick = () => { emergencyFeed = !emergencyFeed; qualityStatus = emergencyFeed ? "Emergency feed staged. Seal the event to make the swap irreversible." : "Emergency feed deselected."; render(); };
   document.querySelectorAll("[data-repair-kind]").forEach(button => button.onclick = () => toggleRepair(button.dataset.repairKind, button.dataset.repairId));
-  const sealQuality = document.querySelector("#seal-quality"); if (sealQuality) sealQuality.onclick = async () => { sealQuality.disabled = true; try { qualityResult = await request("/api/quality", { room: session.room, player: session.player, action: "seal", featureState, emergencyFeed, repairs: Object.fromEntries(Object.entries(repairs).map(([key, value]) => [key, [...value]])) }); qualityState = qualityResult.qualityState; qualityStatus = qualityResult.message; saveQualityResult(qualityResult); highestStage = Math.max(highestStage, 4); render(); } catch (error) { qualityStatus = error.message; render(); } };
+  const sealQuality = document.querySelector("#seal-quality"); if (sealQuality) sealQuality.onclick = async () => { sealQuality.disabled = true; try { qualityResult = await request("/api/quality", { room: session.room, player: session.player, action: "seal", featureState, emergencyFeed, repairs: Object.fromEntries(Object.entries(repairs).map(([key, value]) => [key, [...value]])) }); qualityState = qualityResult.qualityState; qualityStatus = qualityResult.message; await saveQualityResult(qualityResult); highestStage = Math.max(highestStage, 4); render(); } catch (error) { qualityStatus = error.message; render(); } };
   document.querySelectorAll("[data-model]").forEach(button => button.onclick = () => { model = button.dataset.model; kaggleScript = ""; download.disabled = true; forecastStatus = ""; render(); });
   const tuningTrials = document.querySelector("#tuning-trials"), tuningFolds = document.querySelector("#tuning-folds"), tuningSeed = document.querySelector("#tuning-seed");
   [tuningTrials, tuningFolds, tuningSeed].filter(Boolean).forEach(input => input.onchange = () => { tuning = normalizeTuning({ trials: tuningTrials.value, folds: tuningFolds.value, randomState: tuningSeed.value }); kaggleScript = ""; download.disabled = true; forecastStatus = ""; render(); });

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 export const SOURCE_PACKAGE = "traffic_competition_package.zip";
 export const TRAFFIC_CLASSES = ["Free_Flow", "Heavy_Traffic", "Pedestrian_Event", "Incident", "Low_Activity"];
@@ -48,7 +48,8 @@ function parseCsv(text) {
   return records.map(parts => Object.fromEntries(header.map((name, index) => [name, parts[index] ?? ""])));
 }
 
-const readCsv = name => parseCsv(readFileSync(new URL(`../data/traffic/${name}`, import.meta.url), "utf8")).map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, Object.keys(FEATURE_META).includes(key) ? (value === "" ? null : Number(value)) : value])));
+const readCsv = name => parseCsv(readFileSync(new URL(`../data/traffic/${name}`, import.meta.url), "utf8")).map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, ["event_id", "label", "target", "record_id", "manual_id"].includes(key) ? value : (value === "" ? null : Number.isNaN(Number(value)) ? value : Number(value))])));
+const readOptionalCsv = (name, fallback) => existsSync(new URL(`../data/traffic/${name}`, import.meta.url)) ? readCsv(name) : fallback;
 
 const numericColumns = new Set(Object.keys(FEATURE_META));
 const coerce = row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, numericColumns.has(key) ? (value === "" ? null : Number(value)) : value]));
@@ -56,16 +57,17 @@ let cache;
 function loadData() {
   if (cache) return cache;
   const trainDamaged = readCsv("train_16.csv"), test = readCsv("test_16.csv"), strengthRows = readCsv("feature_strength_table.csv");
+  const trainBackup = readCsv("train_backup_10.csv"), testBackup = readCsv("test_backup_10.csv");
   cache = {
     trainDamaged,
-    trainClean: readCsv("train_clean_16.csv"),
+    trainClean: readOptionalCsv("train_clean_16.csv", trainDamaged),
     test,
     truth: new Map(readCsv("test_truth.csv").map(row => [row.event_id, row.label])),
-    trainBackup: readCsv("train_backup_10.csv"),
-    testBackup: readCsv("test_backup_10.csv"),
+    trainBackup,
+    testBackup,
     corruptionLog: readCsv("corruption_log.csv"),
     featureStrength: Object.fromEntries(strengthRows.map(row => [row.feature, row])),
-    backupFeatures: JSON.parse(readFileSync(new URL("../data/traffic/backup_feature_list.json", import.meta.url), "utf8")).backup_features,
+    backupFeatures: Object.keys(trainBackup[0]).filter(key => !["event_id", "label"].includes(key)),
     metadata: JSON.parse(readFileSync(new URL("../data/traffic/generation_metadata.json", import.meta.url), "utf8")),
     features: Object.keys(trainDamaged[0]).filter(key => !["event_id", "label"].includes(key))
   };

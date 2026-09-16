@@ -47,6 +47,33 @@ database.exec(`
     PRIMARY KEY (room_pin, player_name),
     FOREIGN KEY (room_pin, player_name) REFERENCES game_players(room_pin, name) ON DELETE CASCADE
   );
+  CREATE TABLE IF NOT EXISTS game_scores (
+    room_pin TEXT NOT NULL REFERENCES game_rooms(pin) ON DELETE CASCADE,
+    player_name TEXT NOT NULL,
+    stage TEXT NOT NULL CHECK (stage IN ('event1', 'manual', 'features', 'quality', 'forecast')),
+    score REAL,
+    points REAL,
+    max_points REAL,
+    credits REAL,
+    time_taken_seconds REAL,
+    status TEXT,
+    payload TEXT NOT NULL,
+    submitted_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (room_pin, player_name, stage),
+    FOREIGN KEY (room_pin, player_name) REFERENCES game_players(room_pin, name) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS game_scores_room_stage_idx ON game_scores(room_pin, stage, updated_at);
+  CREATE TABLE IF NOT EXISTS game_activity_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_pin TEXT NOT NULL REFERENCES game_rooms(pin) ON DELETE CASCADE,
+    player_name TEXT,
+    event_type TEXT NOT NULL,
+    payload TEXT NOT NULL DEFAULT '{}',
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS game_activity_room_idx ON game_activity_log(room_pin, created_at);
 `);
 
 export function transaction(callback) {
@@ -59,6 +86,10 @@ export function transaction(callback) {
     database.exec("ROLLBACK");
     throw error;
   }
+}
+
+export function logActivity(roomPin, playerName, eventType, payload = {}) {
+  database.prepare("INSERT INTO game_activity_log (room_pin, player_name, event_type, payload, created_at) VALUES (?, ?, ?, ?, ?)").run(roomPin, playerName || null, eventType, JSON.stringify(payload), Date.now());
 }
 
 export { databasePath };
