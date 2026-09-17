@@ -78,6 +78,8 @@ function buildNotebookPayload({ model, features, emergencyFeed = false, repairs 
   const safeFeatures = identifiers(features);
   if (safeFeatures.length !== 10) throw new Error("The local notebook requires exactly ten locked features.");
   const settings = normalizeTuning(tuning);
+  const chosenParameters = tuning.hyperparameters && typeof tuning.hyperparameters === "object" ? tuning.hyperparameters : {};
+  const parameterSpace = Object.fromEntries(Object.entries(chosenParameters).map(([key, value]) => [`classifier__${key}`, [value]]));
   const safeRepairs = {
     missingColumns: identifiers(repairs.missingColumns),
     outlierColumns: identifiers(repairs.outlierColumns),
@@ -144,7 +146,7 @@ function buildNotebookPayload({ model, features, emergencyFeed = false, repairs 
     "    ('classifier', model),",
     "])",
     "",
-    `param_space = ${config.space}`,
+    `param_space = ${JSON.stringify(Object.keys(parameterSpace).length ? parameterSpace : null)} if ${JSON.stringify(Boolean(Object.keys(parameterSpace).length))} else ${config.space}`,
     "",
     "cv = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=RANDOM_STATE)",
     "search = RandomizedSearchCV(",
@@ -231,7 +233,7 @@ export function buildKaggleScript({ model, features, emergencyFeed = false, repa
   const trainFile = emergencyFeed ? "train_backup_10.csv" : "train_16.csv";
   const testFile = emergencyFeed ? "test_backup_10.csv" : "test_16.csv";
 
-  if (notebook) return buildNotebookPayload({ model, features: safeFeatures, emergencyFeed, repairs: safeRepairs, tuning: settings });
+  if (notebook) return buildNotebookPayload({ model, features: safeFeatures, emergencyFeed, repairs: safeRepairs, tuning: { ...settings, hyperparameters: tuning.hyperparameters } });
 
   return `# Operation Clearway — local notebook cell
 # This file runs on in-memory data copies and never edits the source CSV files.
