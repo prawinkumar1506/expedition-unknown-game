@@ -162,11 +162,11 @@ test("Event 5 generates a model-specific .ipynb notebook that reads train16/test
   assert.equal(kaggleFilename("Decision Tree", "ipynb"), "decision-tree-randomized-search.ipynb");
 });
 
-test("Event 5 enforces a 40-minute notebook handoff window before generation is locked", async () => {
+test("the combined repair and model handoff stage enforces a 60-minute window", async () => {
   const fs = await import("node:fs/promises");
   const source = await fs.readFile(new URL("../public/game.js", import.meta.url), "utf8");
-  assert.match(source, /FORECAST_TIMEOUT_SECONDS\s*=\s*40\s*\*\s*60/);
-  assert.match(source, /forecastLocked|40-minute|40 minute/i);
+  assert.match(source, /QUALITY_TIMEOUT_SECONDS\s*=\s*60\s*\*\s*60/);
+  assert.match(source, /forecastLocked|combined.*timer|60-minute|60 minute/i);
   assert.match(source, /generateKaggle|generate.*notebook.*expired|notebook.*locked/i);
 });
 

@@ -4,8 +4,8 @@ const session = JSON.parse(sessionStorage.getItem("expedition-session") || "null
 if (!session) window.location.replace("/");
 
 const box = document.querySelector("#workspace"), download = document.querySelector("#export"), statusText = document.querySelector("#mission-status");
-const featureCredit = document.querySelector("#f-credit"), repairCredit = document.querySelector("#r-credit"), evaluationCredit = document.querySelector("#e-credit");
-const stageOrder = ["event1", "manual", "features", "quality", "forecast"];
+const featureCredit = document.querySelector("#f-credit"), repairCredit = document.querySelector("#r-credit"), evaluationCredit = document.querySelector("#e-credit"), stageTimers = document.querySelector("#stage-timers");
+const stageOrder = ["event1", "manual", "features", "quality"];
 const analysisCatalog = [
   ["classprofiles", "Class profiles", 2, "Compare count, missingness, mean, and deviation across all traffic classes."],
   ["correlation", "Correlation analysis", 2, "Inspect redundancy across all sixteen channels."],
@@ -28,23 +28,24 @@ let manualTimeSpentSec = 0, manualTimerId = null, manualTimerStart = 0;
 let event1Result = null, event1Status = "", event1TimeSpentSec = 0, event1TimerId = null, event1TimerStart = 0, event1Selections = [];
 let selectedFeatures = new Set(), analysisType = "classprofiles", analysisFeature = "", analysisSecond = "", analysisState = "", analysisCredits = 10, findings = [], featureState = "", featureResult = null, featureStatus = "";
 let featureTimeSpentSec = 0, featureTimerId = null, featureTimerStart = 0;
-let qualityPlan = null, repairs = { missingColumns: new Set(), outlierColumns: new Set(), labelRecords: new Set(), duplicateGroups: new Set() }, emergencyFeed = false, qualityState = "", qualityResult = null, qualityStatus = "";
+let qualityPlan = null, repairs = { missingColumns: new Set(), outlierColumns: new Set() }, repairMethods = { missing: {}, outlier: {} }, emergencyFeed = false, qualityState = "", qualityResult = null, qualityStatus = "";
 let qualityTimeSpentSec = 0, qualityTimerId = null, qualityTimerStart = 0;
 let model = "Decision Tree", tuning = normalizeTuning(), hyperparameters = {}, forecastCredits = 20, forecastRuns = [], kaggleScript = "", forecastStatus = "", forecastLocked = false;
 let forecastTimeSpentSec = 0, forecastTimerId = null, forecastTimerStart = 0;
 let roomControl = { stageUnlocks: { global: ["event1"], players: {} } }, checkpointTimer = null;
 const FEATURE_TIMEOUT_SECONDS = 30 * 60;
-const QUALITY_TIMEOUT_SECONDS = 20 * 60;
+const QUALITY_TIMEOUT_SECONDS = 60 * 60;
 const EVENT1_TIMEOUT_SECONDS = 15 * 60;
-const FORECAST_TIMEOUT_SECONDS = 40 * 60;
+const FORECAST_TIMEOUT_SECONDS = QUALITY_TIMEOUT_SECONDS;
 const stageStorageKey = `clearway-progress:${session?.room || "unknown"}:${session?.player || "unknown"}`;
+const REPAIR_BUDGET = 100, EMERGENCY_REPAIR_COST = 25;
 const stageIsUnlocked = name => roomControl.stageUnlocks?.global?.includes(name) || roomControl.stageUnlocks?.players?.[session.player]?.includes(name);
-const serializeState = () => ({ stage, highestStage, stageStartedAt: { event1: event1TimerStart, manual: manualTimerStart, features: featureTimerStart, quality: qualityTimerStart, forecast: forecastTimerStart }, manualLabels, manualLocked, manualState, manualResult, event1Result, event1Selections, analysisState, analysisCredits, findings, selectedFeatures: [...selectedFeatures], featureState, featureResult, qualityPlan, repairs: Object.fromEntries(Object.entries(repairs).map(([key, value]) => [key, [...value]])), emergencyFeed, qualityState, qualityResult, model, tuning, hyperparameters, forecastCredits, forecastRuns, kaggleScript, forecastStatus, forecastLocked });
+const serializeState = () => ({ stage, highestStage, stageStartedAt: { event1: event1TimerStart, manual: manualTimerStart, features: featureTimerStart, quality: qualityTimerStart, forecast: forecastTimerStart }, manualLabels, manualLocked, manualState, manualResult, event1Result, event1Selections, analysisState, analysisCredits, findings, selectedFeatures: [...selectedFeatures], featureState, featureResult, qualityPlan, repairs: Object.fromEntries(Object.entries(repairs).map(([key, value]) => [key, [...value]])), repairMethods, emergencyFeed, qualityState, qualityResult, model, tuning, hyperparameters, forecastCredits, forecastRuns, kaggleScript, forecastStatus, forecastLocked });
 const applyState = saved => {
   if (!saved || typeof saved !== "object") return;
-  stage = saved.stage || stage; highestStage = Number(saved.highestStage || 0); manualLabels = saved.manualLabels || {}; manualLocked = Boolean(saved.manualLocked); manualState = saved.manualState || ""; manualResult = saved.manualResult || null; event1Result = saved.event1Result || null; event1Selections = saved.event1Selections || [];
+  stage = saved.stage === "forecast" ? "quality" : (saved.stage || stage); highestStage = Number(saved.highestStage || 0); manualLabels = saved.manualLabels || {}; manualLocked = Boolean(saved.manualLocked); manualState = saved.manualState || ""; manualResult = saved.manualResult || null; event1Result = saved.event1Result || null; event1Selections = saved.event1Selections || [];
   analysisState = saved.analysisState || ""; analysisCredits = Number(saved.analysisCredits ?? 10); findings = saved.findings || []; selectedFeatures = new Set(saved.selectedFeatures || []); featureState = saved.featureState || ""; featureResult = saved.featureResult || null; qualityPlan = saved.qualityPlan || null;
-  repairs = { missingColumns: new Set(saved.repairs?.missingColumns || []), outlierColumns: new Set(saved.repairs?.outlierColumns || []), labelRecords: new Set(saved.repairs?.labelRecords || []), duplicateGroups: new Set(saved.repairs?.duplicateGroups || []) };
+  repairs = { missingColumns: new Set(saved.repairs?.missingColumns || []), outlierColumns: new Set(saved.repairs?.outlierColumns || []) }; repairMethods = saved.repairMethods || { missing: {}, outlier: {} };
   emergencyFeed = Boolean(saved.emergencyFeed); qualityState = saved.qualityState || ""; qualityResult = saved.qualityResult || null; model = saved.model || model; tuning = saved.tuning || tuning; hyperparameters = saved.hyperparameters || {}; forecastCredits = Number(saved.forecastCredits ?? 20); forecastRuns = Array.isArray(saved.forecastRuns) ? saved.forecastRuns : []; kaggleScript = saved.kaggleScript || ""; forecastStatus = saved.forecastStatus || ""; forecastLocked = Boolean(saved.forecastLocked);
   const starts = saved.stageStartedAt || {}; event1TimerStart = Number(starts.event1 || 0); manualTimerStart = Number(starts.manual || 0); featureTimerStart = Number(starts.features || 0); qualityTimerStart = Number(starts.quality || 0); forecastTimerStart = Number(starts.forecast || 0);
 };
@@ -174,6 +175,7 @@ const startEvent1Timer = () => {
   if (!event1TimerStart || event1TimerStart > Date.now()) event1TimerStart = Date.now();
   event1TimerId = setInterval(() => {
     event1TimeSpentSec = Math.min(EVENT1_TIMEOUT_SECONDS, Math.max(0, Math.floor((Date.now() - event1TimerStart) / 1000)));
+    updateChrome();
     if (event1TimeSpentSec % 5 === 0) checkpoint();
     if (event1TimeSpentSec >= EVENT1_TIMEOUT_SECONDS) {
       clearInterval(event1TimerId);
@@ -199,6 +201,7 @@ const startManualTimer = () => {
   if (!manualTimerStart || manualTimerStart > Date.now()) manualTimerStart = Date.now();
   manualTimerId = setInterval(() => {
     manualTimeSpentSec = Math.min(15 * 60, Math.max(0, Math.floor((Date.now() - manualTimerStart) / 1000)));
+    updateChrome();
     if (manualTimeSpentSec % 5 === 0) checkpoint();
     if (manualTimeSpentSec >= 15 * 60) {
       clearInterval(manualTimerId);
@@ -220,6 +223,7 @@ const startFeatureTimer = () => {
   if (!featureTimerStart || featureTimerStart > Date.now()) featureTimerStart = Date.now();
   featureTimerId = setInterval(() => {
     featureTimeSpentSec = Math.min(FEATURE_TIMEOUT_SECONDS, Math.max(0, Math.floor((Date.now() - featureTimerStart) / 1000)));
+    updateChrome();
     if (featureTimeSpentSec % 5 === 0) checkpoint();
     if (featureTimeSpentSec >= FEATURE_TIMEOUT_SECONDS) {
       clearInterval(featureTimerId);
@@ -241,6 +245,8 @@ const startQualityTimer = () => {
   if (!qualityTimerStart || qualityTimerStart > Date.now()) qualityTimerStart = Date.now();
   qualityTimerId = setInterval(() => {
     qualityTimeSpentSec = Math.min(QUALITY_TIMEOUT_SECONDS, Math.max(0, Math.floor((Date.now() - qualityTimerStart) / 1000)));
+    forecastTimeSpentSec = qualityTimeSpentSec;
+    updateChrome();
     if (qualityTimeSpentSec % 5 === 0) checkpoint();
     if (qualityTimeSpentSec >= QUALITY_TIMEOUT_SECONDS) {
       clearInterval(qualityTimerId);
@@ -248,10 +254,11 @@ const startQualityTimer = () => {
         qualityStatus = "Quality Lab timed out. The current repair plan was sealed automatically.";
         sealQualityRound();
       }
+      forecastLocked = true;
       return;
     }
     if (stage === "quality") {
-      const timerNode = document.querySelector("#quality-timer-value");
+      const timerNode = document.querySelector("#quality-timer-value, #forecast-timer-value");
       if (timerNode) timerNode.textContent = formatQualityCountdown();
     }
   }, 1000);
@@ -302,8 +309,9 @@ function setStage(next) {
 }
 function updateChrome() {
   featureCredit.textContent = `${analysisCredits} / 10`;
-  const spent = repairSpend(); repairCredit.textContent = `${Math.max(0, 15 - spent)} / 15`;
-  evaluationCredit.textContent = `${tuning.trials} trials`;
+  const spent = repairSpend(); repairCredit.textContent = `${Math.max(0, REPAIR_BUDGET - spent)} / ${REPAIR_BUDGET}`;
+  evaluationCredit.textContent = `${forecastCredits} model CR · ${formatCountdown(FORECAST_TIMEOUT_SECONDS - forecastTimeSpentSec)}`;
+  if (stageTimers) stageTimers.textContent = `E1 ${formatCountdown(EVENT1_TIMEOUT_SECONDS - event1TimeSpentSec)} · E2 ${formatCountdown(15 * 60 - manualTimeSpentSec)} · E3 ${formatCountdown(FEATURE_TIMEOUT_SECONDS - featureTimeSpentSec)} · E4–5 ${formatCountdown(QUALITY_TIMEOUT_SECONDS - qualityTimeSpentSec)}`;
   document.querySelectorAll("[data-stage]").forEach(button => { const index = stageOrder.indexOf(button.dataset.stage); button.classList.toggle("active", button.dataset.stage === stage); button.classList.toggle("is-active", button.dataset.stage === stage); button.disabled = index > highestStage || !stageIsUnlocked(button.dataset.stage); });
 }
 
@@ -387,52 +395,48 @@ const sealQualityRound = async () => {
       featureState,
       emergencyFeed,
       repairs: Object.fromEntries(Object.entries(repairs).map(([key, value]) => [key, [...value]])),
+      missingMethods: repairMethods.missing,
+      outlierMethods: repairMethods.outlier,
       timeTakenSeconds: qualityTimeSpentSec
     });
     qualityState = qualityResult.qualityState;
     qualityStatus = qualityResult.message;
     await saveQualityResult(qualityResult);
     highestStage = Math.max(highestStage, 4);
-    if (stage === "quality") {
-      setStage("forecast");
-    } else {
-      render();
-    }
+    render();
   } catch (error) {
     qualityStatus = error.message;
     render();
   }
 };
 
-const repairSpend = () => qualityPlan ? repairs.missingColumns.size * qualityPlan.costs.missing + repairs.outlierColumns.size * qualityPlan.costs.outlier + repairs.labelRecords.size * qualityPlan.costs.label + repairs.duplicateGroups.size * qualityPlan.costs.duplicate : 0;
+const repairSpend = () => qualityPlan ? repairs.missingColumns.size * qualityPlan.costs.missing + repairs.outlierColumns.size * qualityPlan.costs.outlier + (emergencyFeed ? EMERGENCY_REPAIR_COST : 0) : 0;
 function repairCards(kind, items) {
-  const key = { missing: "missingColumns", outlier: "outlierColumns", label: "labelRecords", duplicate: "duplicateGroups" }[kind], set = repairs[key], cost = qualityPlan.costs[kind];
-  return items.map(item => { const id = item.feature || item.eventId || item.duplicateId, selected = set.has(id), detail = item.issueCount ? `${item.issueCount} logged faults` : item.observedLabel ? `Observed: ${item.observedLabel}` : `${item.kind.replaceAll("_", " ")} of ${item.sourceId}`; return `<button class="repair-case ${selected ? "selected" : ""}" data-repair-kind="${kind}" data-repair-id="${id}" ${qualityResult || emergencyFeed ? "disabled" : ""}><div class="repair-case-head"><div><span class="eyebrow">${kind.toUpperCase()}</span><h3>${esc(item.feature ? featureName(item.feature) : id)}</h3></div><span class="repair-cost">${cost} CR</span></div><div class="repair-evidence"><div><small>EVIDENCE</small><p>${esc(detail)}</p></div></div></button>`; }).join("");
+  const key = { missing: "missingColumns", outlier: "outlierColumns" }[kind], set = repairs[key], cost = qualityPlan.costs[kind], methods = kind === "missing" ? qualityPlan.missingMethods : qualityPlan.outlierMethods;
+  return items.map(item => { const id = item.feature, selected = set.has(id), detail = kind === "missing" ? "Choose a replacement method for this locked column." : "Choose how to handle outliers in this locked column."; return `<article class="repair-case ${selected ? "selected" : ""}"><button class="repair-case-toggle" data-repair-kind="${kind}" data-repair-id="${id}" ${qualityResult || emergencyFeed ? "disabled" : ""}><div class="repair-case-head"><div><span class="eyebrow">${kind.toUpperCase()}</span><h3>${esc(featureName(id))}</h3></div><span class="repair-cost">${cost} CR</span></div><div class="repair-evidence"><small>REPAIR OPTION</small><p>${esc(detail)}</p></div></button>${selected ? `<label class="repair-method">${kind === "missing" ? "Replacement method" : "Outlier method"}<select data-repair-method="${kind}" data-repair-id="${id}" ${qualityResult || emergencyFeed ? "disabled" : ""}>${methods.map(method => `<option value="${method}" ${(repairMethods[kind][id] || methods[0]) === method ? "selected" : ""}>${method.replaceAll("_", " ")}</option>`).join("")}</select></label>` : ""}</article>`; }).join("");
 }
 function renderQuality() {
   if (!qualityPlan) return `${sectionIntro("4", "Data Quality Lab", "The feature lock is closed. Loading only the damaged records that affect your ten selected channels.", ["Manual Override", "Feature Hunt", "Quality Lab", "Forecast"])}<section class="card"><div class="loading"><i></i>SCANNING TRAINING ARCHIVE…</div></section>`;
   const spent = repairSpend();
   const emergencyEligible = featureResult?.strongCount <= 4;
-  return `${sectionIntro("4", "Data Quality Lab", "The 2,030-row training archive contains missing cells, impossible readings, wrong labels, and retry duplicates. Spend at most 15 repair credits; the system controls how each chosen repair is applied.", ["Manual Override", "Feature Hunt", "Quality Lab", "Forecast"])}
-    <section class="incident-ribbon"><div><small>REPAIR POOL</small><b>${15 - spent}/15 credits</b></div><div><small>MISSING VALUES</small><b>3 credits/column · max 3</b></div><div><small>OUTLIERS</small><b>3 credits/column · max 2</b></div><div><small>RECORD REPAIRS</small><b>Labels 1 · duplicates 2</b></div></section>
-    <section class="card emergency-feed ${emergencyFeed ? "selected" : ""}"><div class="panel-title">Emergency Telemetry Feed <span>Irreversible after sealing</span></div><div class="emergency-body"><div><span class="eyebrow">BACKUP RECOVERY PATH</span><h3>Available only after a failed Feature Hunt lock.</h3><p>${emergencyEligible ? "Your lock has 4 or fewer strong channels. Swap both train and test to the clean fixed 10-channel feed, forfeit Event 3, receive only 35/100 for Event 4, and cap the final-model score at 70/100. It can keep you in the game, not put you on top." : `Your ${featureResult?.strongCount ?? 0}/10 strong-channel lock is still competitive. The backup route unlocks only at 4 or fewer strong channels.`}</p></div><button id="toggle-emergency" class="btn ${emergencyFeed ? "btn--primary" : "btn--ghost"}" ${qualityResult || !emergencyEligible ? "disabled" : ""}>${emergencyFeed ? "Emergency feed selected" : "Select emergency feed"}</button></div></section>
+  return `${sectionIntro("4", "Repair + Model Handoff", "Clean only missing values and outliers, choose how each repair is applied, then generate and run model notebooks before the combined handoff timer expires.", ["Manual Override", "Feature Hunt", "Repair + Model Handoff"])}
+    <section class="incident-ribbon"><div><small>REPAIR POOL</small><b>${Math.max(0, REPAIR_BUDGET - spent)}/${REPAIR_BUDGET} credits</b></div><div><small>MISSING VALUES</small><b>3 credits/column · all columns available</b></div><div><small>OUTLIERS</small><b>3 credits/column · all columns available</b></div><div><small>EMERGENCY FEED</small><b>${EMERGENCY_REPAIR_COST} credits</b></div></section>
+    <section class="card emergency-feed ${emergencyFeed ? "selected" : ""}"><div class="panel-title">Emergency Telemetry Feed <span>Selection is irreversible</span></div><div class="emergency-body"><div><span class="eyebrow">BACKUP RECOVERY PATH</span><h3>Available only after a failed Feature Hunt lock.</h3><p>${emergencyEligible ? `Selecting this feed charges ${EMERGENCY_REPAIR_COST} repair credits immediately. It uses the backup train/test files, forfeits Event 3, and caps Event 4 at 35/100.` : `Your ${featureResult?.strongCount ?? 0}/10 strong-channel lock is still competitive. The backup route unlocks only at 4 or fewer strong channels.`}</p></div><button id="toggle-emergency" class="btn ${emergencyFeed ? "btn--primary" : "btn--ghost"}" ${qualityResult || !emergencyEligible || emergencyFeed ? "disabled" : ""}>${emergencyFeed ? `Emergency feed selected · ${EMERGENCY_REPAIR_COST} CR charged` : `Select emergency feed · ${EMERGENCY_REPAIR_COST} CR`}</button></div></section>
     <section class="card"><div class="panel-title">Missing values <span>${repairs.missingColumns.size}/3 columns selected</span></div><div class="repair-grid">${repairCards("missing", qualityPlan.missingColumns)}</div></section>
-    <section class="card"><div class="panel-title">Impossible outliers <span>${repairs.outlierColumns.size}/2 columns selected</span></div><div class="repair-grid">${repairCards("outlier", qualityPlan.outlierColumns)}</div></section>
-    <section class="card"><div class="panel-title">Suspicious labels <span>${repairs.labelRecords.size}/6 records selected</span></div><div class="repair-grid">${repairCards("label", qualityPlan.labelCandidates)}</div></section>
-    <section class="card"><div class="panel-title">Retry duplicates <span>${repairs.duplicateGroups.size}/4 groups selected</span></div><div class="repair-grid">${repairCards("duplicate", qualityPlan.duplicateGroups)}</div><div class="stage-actions"><span class="${qualityResult ? "recovery-message success" : "recovery-message"}">${esc(qualityStatus || `${spent}/15 credits committed. Repairs apply only after this event is sealed.`)}</span>${qualityResult ? `<button class="btn btn--primary" data-next="forecast">Open Event 5</button>` : `<button id="seal-quality" class="btn btn--primary">Seal Event 4 plan</button>`}</div></section>`;
+    <section class="card"><div class="panel-title">Impossible outliers <span>${repairs.outlierColumns.size}/2 columns selected</span></div><div class="repair-grid">${repairCards("outlier", qualityPlan.outlierColumns)}</div><div class="stage-actions"><span class="${qualityResult ? "recovery-message success" : "recovery-message"}">${esc(qualityStatus || `${spent}/15 cleaning credits committed.`)}</span>${qualityResult ? "" : `<button id="seal-quality" class="btn btn--primary">Seal cleaning plan</button>`}</div></section>` + renderForecast();
 }
 
 function renderForecast() {
   const outputNames = "submission.csv · randomized_search_results.csv · best_model_evaluation.json";
   const catalog = modelCatalog[model], selected = hyperparameters[model] || Object.fromEntries(Object.entries(catalog.parameters).map(([name, options]) => [name, options[0][0]]));
-  const parameterCost = Object.entries(catalog.parameters).reduce((sum, [name, options]) => sum + (options.find(([value]) => String(value) === String(selected[name]))?.[1] || 0), 0);
+  const parameterCost = Object.entries(catalog.parameters).reduce((sum, [name, options]) => sum + options.filter(([value]) => (Array.isArray(selected[name]) ? selected[name] : [selected[name]]).some(candidate => String(candidate) === String(value))).reduce((subtotal, [, cost]) => subtotal + cost, 0), 0);
   const runCost = 1 + parameterCost;
-  const parameterControls = Object.entries(catalog.parameters).map(([name, options]) => `<label>${esc(name.replaceAll("_", " "))}<select data-hyperparameter="${esc(name)}" ${forecastLocked ? "disabled" : ""}>${options.map(([value, cost]) => `<option value="${value === null ? "__null__" : esc(value)}" data-cost="${cost}" ${String(selected[name]) === String(value) ? "selected" : ""}>${value === null ? "None" : esc(value)} · ${cost} CR</option>`).join("")}</select></label>`).join("");
-  return `${sectionIntro("5", "Notebook Model Handoff", "The app seals your decisions but does not train in production. Configure tuning here, then download the generated notebook. It runs RandomizedSearchCV, evaluates the selected best configuration, and writes a local submission file.", ["Manual Override", "Feature Hunt", "Quality Lab", "Notebook handoff"])}
+  const parameterControls = Object.entries(catalog.parameters).map(([name, options]) => { const values = Array.isArray(selected[name]) ? selected[name] : [selected[name]]; return `<label>${esc(name.replaceAll("_", " "))}<select multiple size="${Math.min(4, options.length)}" data-hyperparameter="${esc(name)}" ${forecastLocked ? "disabled" : ""}>${options.map(([value, cost]) => `<option value="${value === null ? "__null__" : esc(value)}" data-cost="${cost}" ${values.some(candidate => String(candidate) === String(value)) ? "selected" : ""}>${value === null ? "None" : esc(value)} · ${cost} CR</option>`).join("")}</select></label>`; }).join("");
+  return `${sectionIntro("4", "Model Handoff", "After cleaning, configure and generate fixed model notebooks, execute them locally, and download the resulting submission file before the combined handoff timer expires.", ["Manual Override", "Feature Hunt", "Repair + Model Handoff"])}
     <section class="incident-ribbon"><div><small>FINAL TEST FEED</small><b>${data.recordCounts.finalTest} unseen rows</b></div><div><small>MODEL RUNS</small><b>${forecastRuns.length}</b></div><div><small>RUN CREDITS</small><b>${forecastCredits}/20</b></div><div><small>HANDOFF WINDOW</small><b id="forecast-timer-value">${formatForecastCountdown()}</b></div></section>
     <section class="card"><div class="panel-title">Model choice <span>One real scikit-learn pipeline per notebook run</span></div><div class="model-grid">${models.map(item => `<button class="model ${model === item[0] ? "selected" : ""}" data-model="${item[0]}"><span>RANDOMIZED SEARCH</span><b>${esc(item[0])}</b><i class="protocol-name">IMPUTE · SCALE · TUNE</i><small>${esc(item[1])}</small></button>`).join("")}</div></section>
     <section class="card"><div class="panel-title">Hyperparameter controls <span>${esc(model)} · this run costs ${runCost} CR</span></div><div class="analysis-config">${parameterControls}<label>Random-search trials<input id="tuning-trials" type="number" min="5" max="100" value="${tuning.trials}" ${forecastLocked ? "disabled" : ""}></label><label>Stratified CV folds<input id="tuning-folds" type="number" min="3" max="10" value="${tuning.folds}" ${forecastLocked ? "disabled" : ""}></label><label>Random seed<input id="tuning-seed" type="number" min="0" max="999999" value="${tuning.randomState}" ${forecastLocked ? "disabled" : ""}></label></div><div class="analysis-status">Dropdown values are discrete choices. Each selection has a visible credit cost; every generated notebook is fixed to this run configuration.</div></section>
-    <section class="card"><div class="panel-title">Notebook delivery <span>${outputNames}</span></div><div class="stage-actions"><span class="${kaggleScript ? "recovery-message success" : "recovery-message"}">${esc(forecastStatus || (forecastLocked ? "The handoff window has expired. Notebook generation is locked." : "Generate a run notebook, execute it locally, then return here to spend credits on another model."))}</span><button id="generate-kaggle" class="btn btn--primary" ${forecastLocked || forecastCredits < runCost ? "disabled" : ""}>${forecastLocked ? "Generation locked" : `Generate notebook · ${runCost} CR`}</button>${kaggleScript ? `<button id="copy-kaggle" class="btn btn--ghost">Copy notebook JSON</button>` : ""}</div>${kaggleScript ? `<pre class="analysis-status" style="margin:12px 0 0;white-space:pre-wrap;max-height:260px;overflow:auto">${esc(kaggleScript)}</pre>` : ""}</section>
+    <section class="card"><div class="panel-title">Notebook delivery <span>${outputNames}</span></div><div class="stage-actions"><span class="${kaggleScript ? "recovery-message success" : "recovery-message"}">${esc(forecastStatus || (forecastLocked ? "The handoff window has expired. Notebook generation is locked." : "Generate a run notebook, execute it locally, then return here to spend credits on another model."))}</span><button id="generate-kaggle" class="btn btn--primary" ${forecastLocked || forecastCredits < runCost ? "disabled" : ""}>${forecastLocked ? "Generation locked" : `Generate notebook · ${runCost} CR`}</button>${kaggleScript ? `<button id="download-generated" class="btn btn--ghost">Download .ipynb</button><button id="copy-kaggle" class="btn btn--ghost">Copy notebook JSON</button>` : ""}</div>${kaggleScript ? `<pre class="analysis-status" style="margin:12px 0 0;white-space:pre-wrap;max-height:260px;overflow:auto">${esc(kaggleScript)}</pre>` : ""}</section>
     <section class="card"><div class="panel-title">Generated run history <span>${forecastRuns.length} notebook${forecastRuns.length === 1 ? "" : "s"}</span></div>${forecastRuns.length ? `<div class="table-scroll"><table class="data-table"><thead><tr><th>Model</th><th>Credits</th><th>Parameters</th><th>Generated</th></tr></thead><tbody>${forecastRuns.map(run => `<tr><td>${esc(run.model)}</td><td>${run.cost}</td><td>${esc(Object.entries(run.parameters).map(([key, value]) => `${key}=${value}`).join(", "))}</td><td>${new Date(run.createdAt).toLocaleString()}</td></tr>`).join("")}</tbody></table></div>` : `<div class="empty-finding">No notebooks generated yet.</div>`}</section>`;
 }
 
@@ -443,7 +447,7 @@ function render() {
 }
 
 function toggleRepair(kind, id) {
-  const key = { missing: "missingColumns", outlier: "outlierColumns", label: "labelRecords", duplicate: "duplicateGroups" }[kind], set = repairs[key], limit = qualityPlan.limits[kind], cost = qualityPlan.costs[kind];
+  const key = { missing: "missingColumns", outlier: "outlierColumns" }[kind], set = repairs[key], limit = qualityPlan.limits[kind], cost = qualityPlan.costs[kind];
   if (set.has(id)) set.delete(id);
   else if (set.size < limit && repairSpend() + cost <= qualityPlan.budget) set.add(id);
   else qualityStatus = set.size >= limit ? `That repair type is limited to ${limit} selections.` : `The repair would exceed the 15-credit budget.`;
@@ -506,18 +510,21 @@ function bind() {
   const analyze = document.querySelector("#run-analysis"); if (analyze) analyze.onclick = async () => { analyze.disabled = true; try { if (!analysisCatalog.some(item => item[0] === analysisType)) analysisType = "classprofiles"; const result = await request("/api/analyze", { room: session.room, player: session.player, type: analysisType, feature: analysisFeature, secondFeature: analysisSecond, analysisState }); analysisState = result.analysisState; analysisCredits = result.creditsRemaining; const key = `${analysisType}:${analysisFeature}:${analysisSecond}`; findings = [{ key, result: result.result }, ...findings.filter(item => item.key !== key)]; featureStatus = result.replayed ? "Evidence reopened; no credits charged." : `${result.cost} credits spent. ${result.creditsRemaining} remain.`; render(); } catch (error) { featureStatus = error.message; render(); } };
   document.querySelectorAll("[data-feature]").forEach(button => button.onclick = () => { const name = button.dataset.feature; if (selectedFeatures.has(name)) selectedFeatures.delete(name); else if (selectedFeatures.size < 10) selectedFeatures.add(name); render(); });
   const lockFeatures = document.querySelector("#lock-features"); if (lockFeatures) lockFeatures.onclick = async () => { lockFeatures.disabled = true; await sealFeatureRound(); };
-  const emergency = document.querySelector("#toggle-emergency"); if (emergency) emergency.onclick = () => { emergencyFeed = !emergencyFeed; qualityStatus = emergencyFeed ? "Emergency feed staged. Seal the event to make the swap irreversible." : "Emergency feed deselected."; render(); };
+  const emergency = document.querySelector("#toggle-emergency"); if (emergency) emergency.onclick = () => { if (emergencyFeed || qualityResult) return; emergencyFeed = true; qualityStatus = `Emergency feed selected. ${EMERGENCY_REPAIR_COST} repair credits will be charged when sealed and this choice cannot be undone.`; render(); };
   document.querySelectorAll("[data-repair-kind]").forEach(button => button.onclick = () => toggleRepair(button.dataset.repairKind, button.dataset.repairId));
-  const sealQuality = document.querySelector("#seal-quality"); if (sealQuality) sealQuality.onclick = async () => { sealQuality.disabled = true; try { qualityResult = await request("/api/quality", { room: session.room, player: session.player, action: "seal", featureState, emergencyFeed, repairs: Object.fromEntries(Object.entries(repairs).map(([key, value]) => [key, [...value]])) }); qualityState = qualityResult.qualityState; qualityStatus = qualityResult.message; await saveQualityResult(qualityResult); highestStage = Math.max(highestStage, 4); render(); } catch (error) { qualityStatus = error.message; render(); } };
-  document.querySelectorAll("[data-model]").forEach(button => button.onclick = () => { model = button.dataset.model; hyperparameters[model] ||= Object.fromEntries(Object.entries(modelCatalog[model].parameters).map(([name, options]) => [name, options[0][0]])); kaggleScript = ""; download.disabled = true; forecastStatus = ""; render(); });
-  document.querySelectorAll("[data-hyperparameter]").forEach(select => select.onchange = () => { const value = select.value === "__null__" ? null : select.value; const options = modelCatalog[model].parameters[select.dataset.hyperparameter]; const typed = options.find(([candidate]) => String(candidate) === String(value))?.[0] ?? value; hyperparameters[model] = { ...(hyperparameters[model] || {}), [select.dataset.hyperparameter]: typed }; kaggleScript = ""; download.disabled = true; forecastStatus = ""; render(); });
+  document.querySelectorAll("[data-repair-method]").forEach(select => select.onchange = () => { repairMethods[select.dataset.repairMethod][select.dataset.repairId] = select.value; checkpoint(); });
+  const sealQuality = document.querySelector("#seal-quality"); if (sealQuality) sealQuality.onclick = async () => { sealQuality.disabled = true; try { qualityResult = await request("/api/quality", { room: session.room, player: session.player, action: "seal", featureState, emergencyFeed, repairs: Object.fromEntries(Object.entries(repairs).map(([key, value]) => [key, [...value]])), missingMethods: repairMethods.missing, outlierMethods: repairMethods.outlier }); qualityState = qualityResult.qualityState; qualityStatus = qualityResult.message; await saveQualityResult(qualityResult); highestStage = Math.max(highestStage, 4); render(); } catch (error) { qualityStatus = error.message; render(); } };
+  document.querySelectorAll("[data-model]").forEach(button => button.onclick = () => { model = button.dataset.model; hyperparameters[model] ||= Object.fromEntries(Object.entries(modelCatalog[model].parameters).map(([name, options]) => [name, [options[0][0]]])); kaggleScript = ""; download.disabled = true; forecastStatus = ""; render(); });
+  document.querySelectorAll("[data-hyperparameter]").forEach(select => select.onchange = () => { const options = modelCatalog[model].parameters[select.dataset.hyperparameter]; const values = [...select.selectedOptions].map(option => option.value === "__null__" ? null : option.value).map(value => options.find(([candidate]) => String(candidate) === String(value))?.[0] ?? value); hyperparameters[model] = { ...(hyperparameters[model] || {}), [select.dataset.hyperparameter]: values.length ? values : [options[0][0]] }; kaggleScript = ""; download.disabled = true; forecastStatus = ""; render(); });
   const tuningTrials = document.querySelector("#tuning-trials"), tuningFolds = document.querySelector("#tuning-folds"), tuningSeed = document.querySelector("#tuning-seed");
   [tuningTrials, tuningFolds, tuningSeed].filter(Boolean).forEach(input => input.onchange = () => { tuning = normalizeTuning({ trials: tuningTrials.value, folds: tuningFolds.value, randomState: tuningSeed.value }); kaggleScript = ""; download.disabled = true; forecastStatus = ""; render(); });
-  const generateKaggle = document.querySelector("#generate-kaggle"); if (generateKaggle) generateKaggle.onclick = () => { if (forecastLocked) { forecastStatus = "40 minutes elapsed. Notebook generation is locked."; render(); return; } const parameters = hyperparameters[model] || Object.fromEntries(Object.entries(modelCatalog[model].parameters).map(([name, options]) => [name, options[0][0]])); const parameterCost = Object.entries(modelCatalog[model].parameters).reduce((sum, [name, options]) => sum + (options.find(([value]) => String(value) === String(parameters[name]))?.[1] || 0), 0); const runCost = 1 + parameterCost; if (forecastCredits < runCost) { forecastStatus = `That run costs ${runCost} credits; ${forecastCredits} remain.`; render(); return; } try { const finalRepairs = qualityResult?.emergencyFeed ? {} : Object.fromEntries(Object.entries(repairs).map(([key, value]) => [key, [...value]])); tuning = normalizeTuning({ ...tuning, hyperparameters: parameters }); kaggleScript = buildKaggleScript({ model, features: qualityResult?.features || featureResult?.selected, emergencyFeed: Boolean(qualityResult?.emergencyFeed), repairs: finalRepairs, tuning: { ...tuning, hyperparameters: parameters }, notebook: true }); forecastCredits -= runCost; forecastRuns = [{ model, cost: runCost, parameters, createdAt: Date.now() }, ...forecastRuns]; download.disabled = false; forecastStatus = `${model} notebook ready. This run cost ${runCost} credits.`; checkpoint(); render(); } catch (error) { forecastStatus = error.message; render(); } };
-  const copyKaggle = document.querySelector("#copy-kaggle"); if (copyKaggle) copyKaggle.onclick = async () => { try { await navigator.clipboard.writeText(kaggleScript); forecastStatus = "Notebook JSON copied to the clipboard."; render(); } catch { forecastStatus = "Clipboard access was blocked. Use the download button in the top bar instead."; render(); } };
+  const generateKaggle = document.querySelector("#generate-kaggle"); if (generateKaggle) generateKaggle.onclick = () => { if (forecastLocked) { forecastStatus = "The combined handoff timer has expired. Notebook generation is locked."; render(); return; } if (!qualityResult) { forecastStatus = "Seal the cleaning plan before generating a model notebook."; render(); return; } const parameters = hyperparameters[model] || Object.fromEntries(Object.entries(modelCatalog[model].parameters).map(([name, options]) => [name, [options[0][0]]])); const parameterCost = Object.entries(modelCatalog[model].parameters).reduce((sum, [name, options]) => sum + options.filter(([value]) => (Array.isArray(parameters[name]) ? parameters[name] : [parameters[name]]).some(candidate => String(candidate) === String(value))).reduce((subtotal, [, cost]) => subtotal + cost, 0), 0); const runCost = 1 + parameterCost; if (forecastCredits < runCost) { forecastStatus = `That run costs ${runCost} credits; ${forecastCredits} remain.`; render(); return; } try { const finalRepairs = qualityResult?.emergencyFeed ? {} : Object.fromEntries(Object.entries(repairs).map(([key, value]) => [key, [...value]])); tuning = normalizeTuning({ ...tuning, hyperparameters: parameters, repairMethods }); kaggleScript = buildKaggleScript({ model, features: qualityResult.features, emergencyFeed: Boolean(qualityResult.emergencyFeed), repairs: finalRepairs, tuning: { ...tuning, hyperparameters: parameters, repairMethods }, notebook: true }); forecastCredits -= runCost; forecastRuns = [{ model, cost: runCost, parameters, createdAt: Date.now() }, ...forecastRuns]; download.disabled = false; forecastStatus = `${model} notebook ready. This run cost ${runCost} credits.`; checkpoint(); render(); } catch (error) { forecastStatus = error.message; render(); } };
+  const downloadNotebook = () => { try { JSON.parse(kaggleScript); const url = URL.createObjectURL(new Blob([kaggleScript], { type: "application/x-ipynb+json" })), link = document.createElement("a"); link.href = url; link.download = kaggleFilename(model, "ipynb"); link.click(); URL.revokeObjectURL(url); forecastStatus = `${kaggleFilename(model, "ipynb")} downloaded.`; } catch { forecastStatus = "The generated notebook JSON is invalid and was not downloaded."; } };
+  const downloadGenerated = document.querySelector("#download-generated"); if (downloadGenerated) downloadGenerated.onclick = downloadNotebook;
+  const copyKaggle = document.querySelector("#copy-kaggle"); if (copyKaggle) copyKaggle.onclick = async () => { try { await navigator.clipboard.writeText(kaggleScript); forecastStatus = "Notebook JSON copied to the clipboard."; render(); } catch { forecastStatus = "Clipboard access was blocked. Use Download .ipynb instead."; render(); } };
 }
 
-download.onclick = () => { if (!kaggleScript) return; const url = URL.createObjectURL(new Blob([kaggleScript], { type: "application/x-ipynb+json" })), link = document.createElement("a"); link.href = url; link.download = kaggleFilename(model, "ipynb"); link.click(); URL.revokeObjectURL(url); };
+download.onclick = () => { if (!kaggleScript) return; try { JSON.parse(kaggleScript); const url = URL.createObjectURL(new Blob([kaggleScript], { type: "application/x-ipynb+json" })), link = document.createElement("a"); link.href = url; link.download = kaggleFilename(model, "ipynb"); link.click(); URL.revokeObjectURL(url); } catch { forecastStatus = "The generated notebook JSON is invalid and was not downloaded."; render(); } };
 document.querySelectorAll("[data-stage]").forEach(button => button.onclick = () => setStage(button.dataset.stage));
 window.addEventListener("beforeunload", () => checkpoint());
 setInterval(() => checkpoint(), 5000);
