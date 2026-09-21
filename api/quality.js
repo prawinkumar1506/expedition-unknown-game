@@ -99,7 +99,7 @@ export default function handler(req, res) {
       const qualityState = packState("quality", { room, player, features: event.backupFeatures, featureScore: 0, qualityScore: EMERGENCY_QUALITY_SCORE, emergencyFeed: true, repairs: { missingColumns: [], outlierColumns: [] }, methods: { missing: {}, outlier: {} }, repairSpend: EMERGENCY_REPAIR_COST, timeTakenSeconds });
       return json(res, 200, { sealed: true, emergencyFeed: true, features: event.backupFeatures, featureScore: 0, qualityScore: EMERGENCY_QUALITY_SCORE, repairSpend: EMERGENCY_REPAIR_COST, repairBudget: BUDGET, timeTakenSeconds, qualityState, message: `Emergency Telemetry Feed locked. ${EMERGENCY_REPAIR_COST} repair credits were charged; Event 3 is forfeited and Event 4 is capped at 35/100.` });
     }
-    const { repairs, methods, spend } = validateRepairs(plan, req.body?.repairs), qualityScore = scoreRepairPlan(plan, repairs);
+    const { repairs, methods, spend } = validateRepairs(plan, { ...req.body?.repairs, missingMethods: req.body?.missingMethods, outlierMethods: req.body?.outlierMethods }), qualityScore = scoreRepairPlan(plan, repairs);
     const qualityState = packState("quality", { room, player, features: featureState.selected, featureScore: featureState.score, qualityScore, emergencyFeed: false, repairs, methods, repairSpend: spend, timeTakenSeconds });
     return json(res, 200, { sealed: true, emergencyFeed: false, features: featureState.selected, featureScore: featureState.score, qualityScore, repairSpend: spend, repairBudget: BUDGET, methods, timeTakenSeconds, qualityState, message: `Cleaning plan sealed: ${spend}/${BUDGET} repair credits spent, repair effectiveness ${qualityScore}/100.` });
   } catch (error) {
