@@ -4,8 +4,8 @@ import { packState, verifyState } from "./_state.js";
 
 const COSTS = { missing: 3, outlier: 3 };
 const LIMITS = { missing: 10, outlier: 10 };
-const BUDGET = 100;
-export const EMERGENCY_REPAIR_COST = 25;
+const BUDGET = 50;
+export const EMERGENCY_REPAIR_COST = 30;
 // This is a recovery route, not an alternate optimal build. Four or fewer
 // strong channels means the locked selection cannot outperform the fixed backup.
 export const EMERGENCY_MAX_STRONG_CHANNELS = 4;
