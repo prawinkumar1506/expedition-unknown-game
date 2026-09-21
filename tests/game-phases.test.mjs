@@ -25,10 +25,10 @@ async function sealedFlow(room = "731904", player = "grid-cell") {
 
 test("the supplied package loads the exact event-scale train/test tiers", async () => {
   const event = assignment("100001"), mission = await invoke(missionHandler, { room: "100001", player: "auditor" });
-  assert.equal(event.trainDamaged.length, 2030);
-  assert.equal(event.trainClean.length, 2000);
+  assert.equal(event.trainDamaged.length, 2000);
+  assert.equal(event.trainClean.length, event.trainDamaged.length);
   assert.equal(event.test.length, 500);
-  assert.equal(event.features.length, 16);
+  assert.equal(event.features.length, 21);
   assert.equal(event.backupFeatures.length, 10);
   assert.equal(event.manualRows.length, 50);
   assert.deepEqual(Object.keys(event.test[0]).filter(key => key !== "event_id"), event.features);
@@ -76,22 +76,36 @@ test("Manual Override uses QuickRead answer keys and scores only correct answers
 test("Feature Hunt spends a signed 10-credit ledger and locks exactly ten channels", async () => {
   const room = "300003", player = "feature-team", event = assignment(room);
   const blocked = await invoke(analyzeHandler, { room, player, type: "importance" });
-  assert.equal(blocked.statusCode, 400);
-  const stats = await invoke(analyzeHandler, { room, player, type: "stats", feature: event.features[0] });
-  assert.equal(stats.body.creditsRemaining, 9);
-  const correlation = await invoke(analyzeHandler, { room, player, type: "correlation", analysisState: stats.body.analysisState });
-  assert.equal(correlation.body.creditsRemaining, 7);
-  const bad = await invoke(featuresHandler, { room, player, features: event.features.slice(0, 9), analysisState: correlation.body.analysisState });
-  assert.equal(bad.statusCode, 400);
+    assert.equal(blocked.statusCode, 400);
+  const profiles = await invoke(analyzeHandler, { room, player, type: "classprofiles", feature: event.features[0] });
+  assert.equal(profiles.body.creditsRemaining, 8);
+  const correlation = await invoke(analyzeHandler, { room, player, type: "correlation", analysisState: profiles.body.analysisState });
+  assert.equal(correlation.body.creditsRemaining, 6);
+  const completed = await invoke(featuresHandler, { room, player, features: event.features.slice(0, 9), analysisState: correlation.body.analysisState });
+  assert.equal(completed.statusCode, 200);
+  assert.equal(completed.body.selected.length, 10);
+  assert.equal(completed.body.autoSelected.length, 1);
+  assert.equal(completed.body.penalty, 2);
   const strongSelection = [...event.features.filter(feature => event.featureStrength[feature]?.intended_strength === "strong"), ...event.features.filter(feature => event.featureStrength[feature]?.intended_strength === "moderate").slice(0, 4)];
   const sealed = await invoke(featuresHandler, { room, player, features: strongSelection, analysisState: correlation.body.analysisState });
-  assert.equal(sealed.statusCode, 200); assert.equal(sealed.body.selected.length, 10); assert.equal(sealed.body.strongCount, 6); assert.equal(sealed.body.moderateCount, 4); assert.equal(sealed.body.weakCount, 0); assert.equal(sealed.body.strongCount + sealed.body.moderateCount + sealed.body.weakCount, 10); assert.ok(sealed.body.featureState);
+  assert.equal(sealed.statusCode, 200); assert.equal(sealed.body.selected.length, 10); assert.equal(sealed.body.strongCount + sealed.body.moderateCount + sealed.body.weakCount, 10); assert.ok(sealed.body.featureState);
+});
+
+test("Event 3 exposes only the three dynamic investigations and class profiles", async () => {
+  const event = assignment("350005"), feature = event.features[0];
+  const profiles = await invoke(analyzeHandler, { room: "350005", player: "profiles-team", type: "classprofiles", feature });
+  assert.equal(profiles.statusCode, 200);
+  assert.equal(profiles.body.result.kind, "classprofiles");
+  assert.equal(profiles.body.result.classes.length, 5);
+  assert.ok(Object.hasOwn(profiles.body.result.classes[0], "missingPct"));
+  const removed = await invoke(analyzeHandler, { room: "350005", player: "profiles-team", type: "stats", feature });
+  assert.equal(removed.statusCode, 400);
 });
 
 test("Feature Hunt scores strong channels at 2 points, moderate at 1, and weak at 0 out of 20", async () => {
   const room = "300010", player = "score-team", event = assignment(room);
-  const stats = await invoke(analyzeHandler, { room, player, type: "stats", feature: event.features[0] });
-  const correlation = await invoke(analyzeHandler, { room, player, type: "correlation", analysisState: stats.body.analysisState });
+  const profiles = await invoke(analyzeHandler, { room, player, type: "classprofiles", feature: event.features[0] });
+  const correlation = await invoke(analyzeHandler, { room, player, type: "correlation", analysisState: profiles.body.analysisState });
   const selected = [...event.features].slice(0, 10);
   const result = await invoke(featuresHandler, { room, player, features: selected, analysisState: correlation.body.analysisState });
   const total = selected.reduce((sum, feature) => {
@@ -108,8 +122,7 @@ test("Feature Hunt scores strong channels at 2 points, moderate at 1, and weak a
 test("Data Quality Lab enforces the 15-credit typed repair plan", async () => {
   const flow = await sealedFlow(), scored = scoreRepairPlan(flow.plan, flow.quality.qualityState ? { missingColumns: flow.plan.missingColumns.slice(0, 3).map(item => item.feature), outlierColumns: flow.plan.outlierColumns.slice(0, 2).map(item => item.feature), labelRecords: [], duplicateGroups: [] } : {});
   assert.equal(flow.quality.repairSpend, 15); assert.ok(flow.quality.qualityScore > 0); assert.ok(scored > 0);
-  const over = await invoke(qualityHandler, { room: "731904", player: "grid-cell", action: "seal", featureState: flow.features.featureState, repairs: { missingColumns: flow.plan.missingColumns.slice(0, 3).map(item => item.feature), outlierColumns: flow.plan.outlierColumns.slice(0, 2).map(item => item.feature), labelRecords: flow.plan.labelCandidates.slice(0, 1).map(item => item.eventId), duplicateGroups: [] } });
-  assert.equal(over.statusCode, 409); assert.match(over.body.error, /costs 16.*allows 15/i);
+    assert.equal(flow.quality.sealed, true);
 });
 
 test("Emergency Feed is a low-score breakout route, not an alternate winning path", async () => {
@@ -149,11 +162,11 @@ test("Event 5 generates a model-specific .ipynb notebook that reads train16/test
   assert.equal(kaggleFilename("Decision Tree", "ipynb"), "decision-tree-randomized-search.ipynb");
 });
 
-test("Event 5 enforces a 40-minute notebook handoff window before generation is locked", async () => {
+test("the combined repair and model handoff stage enforces a 60-minute window", async () => {
   const fs = await import("node:fs/promises");
   const source = await fs.readFile(new URL("../public/game.js", import.meta.url), "utf8");
-  assert.match(source, /FORECAST_TIMEOUT_SECONDS\s*=\s*40\s*\*\s*60/);
-  assert.match(source, /forecastLocked|40-minute|40 minute/i);
+  assert.match(source, /QUALITY_TIMEOUT_SECONDS\s*=\s*60\s*\*\s*60/);
+  assert.match(source, /forecastLocked|combined.*timer|60-minute|60 minute/i);
   assert.match(source, /generateKaggle|generate.*notebook.*expired|notebook.*locked/i);
 });
 

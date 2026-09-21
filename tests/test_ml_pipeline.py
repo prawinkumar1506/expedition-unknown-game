@@ -17,8 +17,6 @@ def pack_state(kind, **state):
 
 class PipelineTests(unittest.TestCase):
     def setUp(self):
-        os.environ.pop("SUPABASE_URL", None)
-        os.environ.pop("SUPABASE_SECRET_KEY", None)
         self.room = "731904"
         self.player = "python-test"
         self.features = list(load_data()["train"][0].keys())[1:11]

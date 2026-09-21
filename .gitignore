@@ -1,5 +1,8 @@
 .vercel
 node_modules
+data/clearway.sqlite
+data/clearway.sqlite-shm
+data/clearway.sqlite-wal
 .env
 .env.*
 !.env.example

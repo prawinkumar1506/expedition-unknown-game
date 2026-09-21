@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-const secret = () => process.env.CLEARWAY_STATE_SECRET || process.env.MATCH_GATEWAY_SECRET || process.env.SUPABASE_SECRET_KEY || "clearway-local-state";
+const secret = () => process.env.CLEARWAY_STATE_SECRET || process.env.MATCH_GATEWAY_SECRET || "clearway-local-state";
 const sign = payload => createHmac("sha256", secret()).update(payload).digest("base64url");
 
 export function packState(kind, state) {

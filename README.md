@@ -56,7 +56,7 @@ Upload the supplied traffic CSV files as a Kaggle Dataset before running the cel
 
 `data/traffic/` contains the package files used by the server:
 
-- `train_16.csv`: 2,030 delivered rows, 16 features, deliberately damaged
+- `train_16.csv`: 2,000 delivered rows, 16 features, deliberately damaged
 - `train_clean_16.csv`: organizer-side 2,000-row canonical archive
 - `test_16.csv`: clean 500-row hidden feed without labels
 - `test_truth.csv`: server-side final answer key
@@ -72,28 +72,27 @@ Player / host browser
         │
         ├── Vercel static client
         └── Vercel API routes
-              ├── Supabase rooms and game admission
+              ├── SQLite rooms and game admission
               ├── signed Event 2 / 3 / 4 state seals
               ├── server-side dataset diagnostics and repairs
               └── client-side Kaggle RandomizedSearchCV handoff
 ```
 
-The earlier weighted admission-router prototype remains in `/api/join` and `/api/heartbeat`; the current room flow uses Supabase-backed rooms and Vercel functions.
+The earlier weighted admission-router prototype remains in `/api/join` and `/api/heartbeat`; the current room flow uses a SQLite database owned by the LAN server.
 
 ## Local setup
 
-Requirements: Node.js 20+, the Vercel CLI, and Python 3.12 only when running the local evaluator.
+Requirements: Node.js 22.5+ and Python 3.12 only when running the local evaluator.
 
 ```bash
 npm install
 python -m pip install -r requirements-local.txt
-vercel env pull .env.local
-npx vercel dev
+npm run dev
 ```
 
 Create a room at `/host.html`, join from `/`, and start the room from the host console.
 
-For Supabase, run `supabase/room_schema.sql`, then configure `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and server-only `SUPABASE_SECRET_KEY`. Set `CLEARWAY_STATE_SECRET` in production so signed progression tokens do not use the local development fallback.
+The server creates `data/clearway.sqlite` automatically. Set `CLEARWAY_DB_PATH` to place it elsewhere, and set `CLEARWAY_STATE_SECRET` so signed progression tokens remain stable across restarts. Give clients the server computer's LAN address, for example `http://192.168.1.20:3000/`.
 
 ## Validation
 

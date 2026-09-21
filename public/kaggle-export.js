@@ -78,11 +78,12 @@ function buildNotebookPayload({ model, features, emergencyFeed = false, repairs 
   const safeFeatures = identifiers(features);
   if (safeFeatures.length !== 10) throw new Error("The local notebook requires exactly ten locked features.");
   const settings = normalizeTuning(tuning);
+  const chosenParameters = tuning.hyperparameters && typeof tuning.hyperparameters === "object" ? tuning.hyperparameters : {};
+  const parameterSpace = Object.fromEntries(Object.entries(chosenParameters).map(([key, value]) => [`classifier__${key}`, Array.isArray(value) ? value : [value]]));
+  const repairMethods = tuning.repairMethods && typeof tuning.repairMethods === "object" ? tuning.repairMethods : { missing: {}, outlier: {} };
   const safeRepairs = {
     missingColumns: identifiers(repairs.missingColumns),
-    outlierColumns: identifiers(repairs.outlierColumns),
-    labelRecords: repairIds(repairs.labelRecords),
-    duplicateGroups: repairIds(repairs.duplicateGroups)
+    outlierColumns: identifiers(repairs.outlierColumns)
   };
   const trainFile = emergencyFeed ? "train_backup_10.csv" : "train_16.csv";
   const testFile = emergencyFeed ? "test_backup_10.csv" : "test_16.csv";
@@ -107,6 +108,7 @@ function buildNotebookPayload({ model, features, emergencyFeed = false, repairs 
     `MODEL_NAME = ${JSON.stringify(model)}`,
     `FEATURES = ${JSON.stringify(safeFeatures)}`,
     `SELECTED_REPAIRS = ${JSON.stringify(safeRepairs, null, 2)}`,
+    `REPAIR_METHODS = ${JSON.stringify(repairMethods, null, 2)}`,
     `N_ITER = ${settings.trials}`,
     `CV_FOLDS = ${settings.folds}`,
     `RANDOM_STATE = ${settings.randomState}`,
@@ -117,18 +119,20 @@ function buildNotebookPayload({ model, features, emergencyFeed = false, repairs 
     "train_df = train_df.copy()",
     "test_df = test_df.copy()",
     "",
-    "if SELECTED_REPAIRS['duplicateGroups']:",
-    "    train_df = train_df.loc[~train_df['event_id'].isin(SELECTED_REPAIRS['duplicateGroups'])].copy()",
-    "",
-    "if SELECTED_REPAIRS['labelRecords']:",
-    "    wrong_label_ids = set(SELECTED_REPAIRS['labelRecords'])",
-    "    train_df.loc[train_df['event_id'].isin(wrong_label_ids), 'label'] = train_df.loc[train_df['event_id'].isin(wrong_label_ids), 'label']",
-    "",
     "for feature in FEATURES:",
-    "    if feature in SELECTED_REPAIRS['missingColumns']:",
-    "        train_df[feature] = train_df[feature].fillna(train_df[feature].median())",
-    "    else:",
-    "        train_df[feature] = train_df[feature].fillna(train_df[feature].median())",
+    "    method = REPAIR_METHODS.get('missing', {}).get(feature, 'median')",
+    "    if method == 'drop': train_df = train_df.loc[train_df[feature].notna()].copy()",
+    "    elif method == 'mean': train_df[feature] = train_df[feature].fillna(train_df[feature].mean())",
+    "    elif method == 'mode': train_df[feature] = train_df[feature].fillna(train_df[feature].mode().iloc[0])",
+    "    else: train_df[feature] = train_df[feature].fillna(train_df[feature].median())",
+    "    outlier_method = REPAIR_METHODS.get('outlier', {}).get(feature)",
+    "    if outlier_method in {'iqr_clip', 'median_clip'}:",
+    "        q1, q3 = train_df[feature].quantile([0.25, 0.75]); iqr = q3 - q1",
+    "        low, high = (q1 - 1.5 * iqr, q3 + 1.5 * iqr) if outlier_method == 'iqr_clip' else (train_df[feature].median(), train_df[feature].median())",
+    "        train_df[feature] = train_df[feature].clip(lower=low, upper=high)",
+    "    elif outlier_method == 'iqr_remove':",
+    "        q1, q3 = train_df[feature].quantile([0.25, 0.75]); iqr = q3 - q1",
+    "        train_df = train_df.loc[train_df[feature].between(q1 - 1.5 * iqr, q3 + 1.5 * iqr)].copy()",
     "",
     "X = train_df[FEATURES].copy()",
     "y = train_df['label'].astype(str).copy()",
@@ -144,7 +148,7 @@ function buildNotebookPayload({ model, features, emergencyFeed = false, repairs 
     "    ('classifier', model),",
     "])",
     "",
-    `param_space = ${config.space}`,
+    `param_space = json.loads(${JSON.stringify(JSON.stringify(parameterSpace))}) if ${Object.keys(parameterSpace).length ? "True" : "False"} else ${config.space}`,
     "",
     "cv = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True, random_state=RANDOM_STATE)",
     "search = RandomizedSearchCV(",
@@ -174,7 +178,7 @@ function buildNotebookPayload({ model, features, emergencyFeed = false, repairs 
     cells: [
       {
         cell_type: "markdown",
-        metadata: {},
+        metadata: { id: "clearway-overview", language: "markdown" },
         source: [
           "# Operation Clearway — Local model notebook\n",
           "\n",
@@ -188,13 +192,13 @@ function buildNotebookPayload({ model, features, emergencyFeed = false, repairs 
       {
         cell_type: "code",
         execution_count: null,
-        metadata: {},
+        metadata: { id: "clearway-training", language: "python" },
         outputs: [],
         source: notebookCode.map(line => `${line}\n`)
       },
       {
         cell_type: "markdown",
-        metadata: {},
+        metadata: { id: "clearway-notes", language: "markdown" },
         source: [
           "## Notes\n",
           "- The source CSVs remain unchanged because all work is done on copied DataFrames.\n",
@@ -231,7 +235,7 @@ export function buildKaggleScript({ model, features, emergencyFeed = false, repa
   const trainFile = emergencyFeed ? "train_backup_10.csv" : "train_16.csv";
   const testFile = emergencyFeed ? "test_backup_10.csv" : "test_16.csv";
 
-  if (notebook) return buildNotebookPayload({ model, features: safeFeatures, emergencyFeed, repairs: safeRepairs, tuning: settings });
+  if (notebook) return buildNotebookPayload({ model, features: safeFeatures, emergencyFeed, repairs: safeRepairs, tuning: { ...settings, hyperparameters: tuning.hyperparameters, repairMethods: tuning.repairMethods } });
 
   return `# Operation Clearway — local notebook cell
 # This file runs on in-memory data copies and never edits the source CSV files.

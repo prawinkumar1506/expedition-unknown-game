@@ -15,3 +15,8 @@ humidity_pct,weak_6,True,weak,relative humidity - redundant with rain
 camera_exposure_score,weak_6,True,weak,auto-exposure setting - tracks time of day
 camera_focus_score,weak_6,False,weak,"lens focus quality, mostly constant"
 lane_marking_visibility_pct,weak_6,False,weak,how clearly lane paint is visible
+driver_fatigue_index,weak_6,False,weak,"proxy fatigue score - not derived from live sensor data, largely noise"
+brake_response_time_ms,weak_6,True,weak,estimated brake response time - uncorrelated with observed conditions
+road_surface_friction_coeff,weak_6,False,weak,"nominal surface friction estimate - static per-site value, near-constant"
+collision_risk_score,weak_6,False,weak,legacy risk score from a decommissioned model - not tied to this label set
+near_miss_count,weak_6,False,weak,"sparse historical near-miss tally - mostly zero, little signal"

@@ -6,6 +6,7 @@ export default function handler(req, res) {
   const room = clean(req.body?.room, 16), player = clean(req.body?.player, 20);
   if (!room || !player) return json(res, 400, { error: "room and player are required" });
   const event = assignment(room);
+  const featureMeta = Object.fromEntries(event.features.map(name => [name, FEATURE_META[name] || { label: name.replaceAll("_", " "), unit: "value", family: "telemetry" }]));
   return json(res, 200, {
     mission: {
       id: "operation-clearway",
@@ -30,7 +31,7 @@ export default function handler(req, res) {
       { priority: 4, label: "Normal_Traffic", test: "fallback when no earlier rule fires" }
     ],
     features: event.features,
-    featureMeta: FEATURE_META,
+    featureMeta,
     trafficClasses: TRAFFIC_CLASSES,
     classDefinitions: [
       { name: "Free_Flow", cue: "Normal speed, lower occupancy, moderate volume." },

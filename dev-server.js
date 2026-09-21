@@ -34,6 +34,7 @@ const routes = {
   health: (await import("./api/health.js")).default,
   camera: (await import("./api/camera.js")).default,
   recovery: (await import("./api/recovery.js")).default,
+  scores: (await import("./api/scores.js")).default,
 };
 
 const mimeTypes = {
