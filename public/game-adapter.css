@@ -171,6 +171,39 @@
 }
 
 .incident-ribbon .danger b { color: var(--danger); }
+.incident-ribbon--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* Stage countdown (top-right of the header) */
+.d-topbar .stage-timer {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-right: 8px;
+  padding: 7px 16px;
+  border: 1px solid color-mix(in oklab, var(--warning) 45%, var(--border));
+  border-radius: 12px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-family: "JetBrains Mono", monospace;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.d-topbar .stage-timer:empty { display: none; }
+
+.stage-timer-label {
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: .14em;
+  opacity: .85;
+}
+
+.stage-timer-value {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
 
 .blackbox-note,
 .intel-wire {
@@ -554,6 +587,9 @@
 
 @media (max-width: 720px) {
   .game-workspace { gap: 14px; }
+  .d-topbar .stage-timer { gap: 6px; margin-right: 0; padding: 5px 10px; }
+  .stage-timer-label { font-size: 10px; }
+  .stage-timer-value { font-size: 20px; }
   .game-workspace .story-brief { padding: 20px; }
   .incident-ribbon,
   .story-progress,
@@ -571,4 +607,54 @@
   .game-workspace .stage-actions > span { margin-right: 0; }
   .arena-bottom { align-items: stretch; flex-direction: column; }
   .arena-bottom .btn--primary { margin-left: 0; }
+}
+
+/* Event description layout correction:
+   keep the complete description visible and let it use the available card width.
+   This is especially important for the long Event 1 brief. */
+.game-workspace .story-brief {
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+}
+
+.game-workspace .story-description {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+.game-workspace .story-description p {
+  width: 100%;
+  max-width: none;
+  margin: 16px 0 0;
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
+  text-overflow: clip;
+}
+
+.game-workspace .story-description p:first-child {
+  margin-top: 16px;
+}
+
+/* Give the first three event briefs a readable measure without truncating text. */
+.game-workspace .story-brief--event-1 .story-description,
+.game-workspace .story-brief--event-2 .story-description,
+.game-workspace .story-brief--event-3 .story-description {
+  max-width: 100%;
+}
+
+@media (min-width: 1101px) {
+  .game-workspace .story-brief--event-1 .story-description p {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 720px) {
+  .game-workspace .story-description p {
+    font-size: 13.5px;
+    line-height: 1.7;
+  }
 }

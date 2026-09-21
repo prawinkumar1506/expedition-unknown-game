@@ -80,6 +80,7 @@ const formatFeatureCountdown = () => formatCountdown(FEATURE_TIMEOUT_SECONDS - f
 const formatQualityCountdown = () => formatCountdown(QUALITY_TIMEOUT_SECONDS - qualityTimeSpentSec);
 const formatEvent1Countdown = () => formatCountdown(EVENT1_TIMEOUT_SECONDS - event1TimeSpentSec);
 const formatForecastCountdown = () => formatCountdown(FORECAST_TIMEOUT_SECONDS - forecastTimeSpentSec);
+const stageTimerReaders = { event1: ["E1", formatEvent1Countdown], manual: ["E2", formatManualCountdown], features: ["E3", formatFeatureCountdown], quality: ["E4–5", formatQualityCountdown] };
 
 const persistScore = async (stageName, storageKey, payload) => {
   await request("/api/scores", { room: session.room, player: session.player, stage: stageName, payload });
@@ -191,10 +192,6 @@ const startEvent1Timer = () => {
       }
       return;
     }
-    if (stage === "event1") {
-      const timerNode = document.querySelector("#event1-timer-value");
-      if (timerNode) timerNode.textContent = formatEvent1Countdown();
-    }
   }, 1000);
 };
 
@@ -214,10 +211,6 @@ const startManualTimer = () => {
       }
       return;
     }
-    if (stage === "manual") {
-      const timerNode = document.querySelector("#manual-timer-value");
-      if (timerNode) timerNode.textContent = formatManualCountdown();
-    }
   }, 1000);
 };
 
@@ -235,10 +228,6 @@ const startFeatureTimer = () => {
         sealFeatureRound();
       }
       return;
-    }
-    if (stage === "features") {
-      const timerNode = document.querySelector("#feature-timer-value");
-      if (timerNode) timerNode.textContent = formatFeatureCountdown();
     }
   }, 1000);
 };
@@ -260,10 +249,6 @@ const startQualityTimer = () => {
       forecastLocked = true;
       return;
     }
-    if (stage === "quality") {
-      const timerNode = document.querySelector("#quality-timer-value, #forecast-timer-value");
-      if (timerNode) timerNode.textContent = formatQualityCountdown();
-    }
   }, 1000);
 };
 
@@ -279,10 +264,6 @@ const startForecastTimer = () => {
       forecastStatus = "40 minutes elapsed. Notebook generation is now locked and cannot be reopened.";
       if (stage === "forecast") render();
       return;
-    }
-    if (stage === "forecast") {
-      const timerNode = document.querySelector("#forecast-timer-value");
-      if (timerNode) timerNode.textContent = formatForecastCountdown();
     }
   }, 1000);
 };
@@ -302,7 +283,7 @@ const displayFeatures = () => {
   return features;
 };
 const number = value => Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
-const sectionIntro = (event, title, subtitle, beats) => `<section class="story-brief"><span>EVENT ${event} · ${esc(title.toUpperCase())}</span><h1>${esc(title.split(" ")[0])} <i>${esc(title.split(" ").slice(1).join(" "))}</i></h1>${(Array.isArray(subtitle) ? subtitle : [subtitle]).map(paragraph => `<p>${esc(paragraph)}</p>`).join("")}<div class="story-beats">${beats.map((beat, index) => `<span class="${index < stageOrder.indexOf(stage) ? "done" : index === stageOrder.indexOf(stage) ? "active" : ""}">${esc(beat)}</span>`).join("")}</div></section>`;
+const sectionIntro = (event, title, subtitle, beats) => `<section class="story-brief story-brief--event-${esc(event)}"><span>EVENT ${event} · ${esc(title.toUpperCase())}</span><h1>${esc(title.split(" ")[0])} <i>${esc(title.split(" ").slice(1).join(" "))}</i></h1><div class="story-description">${(Array.isArray(subtitle) ? subtitle : [subtitle]).map(paragraph => `<p>${esc(paragraph)}</p>`).join("")}</div><div class="story-beats">${beats.map((beat, index) => `<span class="${index < stageOrder.indexOf(stage) ? "done" : index === stageOrder.indexOf(stage) ? "active" : ""}">${esc(beat)}</span>`).join("")}</div></section>`;
 
 function setStage(next) {
   const index = stageOrder.indexOf(next); if (index < 0 || index > highestStage || !stageIsUnlocked(next)) return;
@@ -313,8 +294,8 @@ function setStage(next) {
 function updateChrome() {
   featureCredit.textContent = `${analysisCredits} / 10`;
   const spent = repairSpend(); repairCredit.textContent = `${event4CreditsRemaining()} / ${REPAIR_BUDGET}`;
-  evaluationCredit.textContent = `${event4CreditsRemaining()} Event 4 CR · ${formatCountdown(FORECAST_TIMEOUT_SECONDS - forecastTimeSpentSec)}`;
-  if (stageTimers) stageTimers.textContent = `E1 ${formatCountdown(EVENT1_TIMEOUT_SECONDS - event1TimeSpentSec)} · E2 ${formatCountdown(15 * 60 - manualTimeSpentSec)} · E3 ${formatCountdown(FEATURE_TIMEOUT_SECONDS - featureTimeSpentSec)} · E4–5 ${formatCountdown(QUALITY_TIMEOUT_SECONDS - qualityTimeSpentSec)}`;
+  evaluationCredit.textContent = `${event4CreditsRemaining()} Event 4 CR`;
+  if (stageTimers) { const [timerLabel, readTimer] = stageTimerReaders[stage] || ["E4–5", formatForecastCountdown]; stageTimers.innerHTML = `<span class="stage-timer-label">${timerLabel}</span><span class="stage-timer-value">${readTimer()}</span>`; }
   document.querySelectorAll("[data-stage]").forEach(button => { const index = stageOrder.indexOf(button.dataset.stage); button.classList.toggle("active", button.dataset.stage === stage); button.classList.toggle("is-active", button.dataset.stage === stage); button.disabled = index > highestStage || !stageIsUnlocked(button.dataset.stage); });
 }
 
@@ -339,7 +320,7 @@ function renderEvent1() {
     "Three couriers tried to deliver the archive before the power dropped. The first delivery was an unfinished draft; the second was a stale revision; the last one was the only attempt that reached completion. Their envelopes are also different in what they remember: one records movement at the junction, one records weather, visibility, cameras and signals, and one carries verdicts written before the Surge. The movement and context voices should tell the same fifty-event story. The verdict voice speaks for forty events and leaves ten deliberately unanswered. A copied envelope, a truncated envelope and a wrong-day envelope may still borrow a familiar costume.",
     "The answer is not the three neatest names. It is the only set that survives every sentence of the log, agrees on the site and six-hour window, uses the completed generation rather than the two earlier attempts, and joins cleanly by event ID. Inspect the contents as well as the labels, keep the ten unanswered verdicts blank, and seal the three voices your team can defend."
   ], ["Archive Reconstruction", "Manual Override", "Feature Hunt", "Quality Lab", "Forecast"])}
-    <section class="incident-ribbon"><div><small>TARGET SITE</small><b>JTU-7</b></div><div><small>WINDOW</small><b>03:14–09:14</b></div><div><small>FINAL SYNC</small><b>generation 3</b></div><div><small>LEFTOVER FRAGMENTS</small><b>old + stray</b></div><div><small>TIMER</small><b id="event1-timer-value">${formatEvent1Countdown()}</b></div></section>
+    <section class="incident-ribbon"><div><small>TARGET SITE</small><b>JTU-7</b></div><div><small>WINDOW</small><b>03:14–09:14</b></div><div><small>FINAL SYNC</small><b>generation 3</b></div><div><small>LEFTOVER FRAGMENTS</small><b>old + stray</b></div></section>
     <section class="card"><div class="panel-title">Recovered archive bundle <span>Pull together the fragments that belong to the final JTU-7 recovery window</span></div>
       <div class="selection-board">
         <div class="panel-title">Available recovery fragments <span>${event1Selections.length}/3 selected</span></div>
@@ -354,7 +335,7 @@ function renderManual() {
   const answered = Object.values(manualLabels).filter(Boolean).length;
   const nextStageOpen = stageIsUnlocked("features");
   return `${sectionIntro("2", "Manual Override", "Fifty queued junction readings cannot wait for CLEARWAY to reboot. Apply the printed checklist from top to bottom; the first matching rule wins. Correct answers score +1; blank and wrong answers score 0.", ["Manual Override", "Feature Hunt", "Quality Lab", "Forecast"])}
-    <section class="incident-ribbon"><div><small>QUEUED READINGS</small><b>50 tabular records</b></div><div><small>SCORING</small><b>+1 correct · 0 wrong · 0 blank</b></div><div><small>PROTOCOL</small><b>First matching rule wins</b></div><div><small>PROGRESS</small><b id="manual-progress">${answered}/50 answered</b></div><div><small>TIMER</small><b id="manual-timer-value">${formatManualCountdown()}</b></div></section>
+    <section class="incident-ribbon"><div><small>QUEUED READINGS</small><b>50 tabular records</b></div><div><small>SCORING</small><b>+1 correct · 0 wrong · 0 blank</b></div><div><small>PROTOCOL</small><b>First matching rule wins</b></div><div><small>PROGRESS</small><b id="manual-progress">${answered}/50 answered</b></div></section>
     <section class="card"><div class="panel-title">Paper protocol <span>Read every rule in order</span></div><div class="protocol-grid">${data.manualRules.map(rule => `<article><span>RULE ${rule.priority}</span><b>${esc(rule.label)}</b><small>${esc(rule.test)}</small></article>`).join("")}</div></section>
     <section class="card"><div class="panel-title">Manual review tray <span>Road occupancy is context; it is not a decision threshold in this protocol</span></div><div class="table-scroll"><table class="data-table manual-table"><thead><tr><th>ID</th><th>Vehicles</th><th>Avg speed</th><th>Occupancy</th><th>Pedestrians</th><th>Incident distance</th><th>Controller call</th></tr></thead><tbody>${data.manualRows.map(row => `<tr><th>${row.manual_id}</th><td>${row.vehicle_count}</td><td>${row.avg_vehicle_speed_kmph} km/h</td><td>${row.road_occupancy_pct}%</td><td>${row.pedestrian_count}</td><td>${row.incident_distance_m} m</td><td><select data-manual="${row.manual_id}" ${manualLocked ? "disabled" : ""}><option value="">Leave blank · 0 points</option>${data.manualClasses.map(label => `<option value="${label}" ${manualLabels[row.manual_id] === label ? "selected" : ""}>${label}</option>`).join("")}</select></td></tr>`).join("")}</tbody></table></div><div class="stage-actions"><span class="${manualResult ? "recovery-message success" : "recovery-message"}">${esc(manualStatus || "You may seal the ledger with blanks; guessing carries a real penalty.")}</span>${manualLocked ? `<button class="btn btn--primary" data-next="features" ${nextStageOpen ? "" : "disabled"}>→ ${nextStageOpen ? "Open Event 3" : "Waiting for host to open Event 3"}</button>` : `<button id="lock-manual" class="btn btn--primary">Seal Event 2 ledger</button>`}</div></section>`;
 }
@@ -370,7 +351,7 @@ function renderFeatures() {
   const config = analysisCatalog.find(item => item[0] === analysisType) || analysisCatalog[0], global = analysisType === "correlation", pair = analysisType === "relationship", nextStageOpen = stageIsUnlocked("quality");
   const orderedFeatures = displayFeatures();
   return `${sectionIntro("3", "Feature Hunt", "Sixteen telemetry channels survived the Surge, but Central has only ten seats. Spend investigation credits, then lock exactly ten channels. That choice cannot be reopened.", ["Manual Override", "Feature Hunt", "Quality Lab", "Forecast"])}
-    <section class="incident-ribbon"><div><small>CANDIDATE CHANNELS</small><b>${data.features.length}</b></div><div><small>LOCKED INPUTS</small><b>Exactly 10</b></div><div><small>INVESTIGATION POOL</small><b>${analysisCredits}/10 credits</b></div><div><small>TRAIN ARCHIVE</small><b>${data.recordCounts.trainingDelivered} damaged rows</b></div><div><small>TIMER</small><b id="feature-timer-value">${formatFeatureCountdown()}</b></div></section>
+    <section class="incident-ribbon"><div><small>CANDIDATE CHANNELS</small><b>${data.features.length}</b></div><div><small>LOCKED INPUTS</small><b>Exactly 10</b></div><div><small>INVESTIGATION POOL</small><b>${analysisCredits}/10 credits</b></div><div><small>TRAIN ARCHIVE</small><b>${data.recordCounts.trainingDelivered} damaged rows</b></div></section>
     <div class="investigation-shell"><aside class="tool-catalog"><div class="panel-title">Investigation menu <span>10-credit pool</span></div>${analysisCatalog.map(item => `<button data-analysis-type="${item[0]}" class="${analysisType === item[0] ? "active" : ""}" ${featureResult ? "disabled" : ""}><span><b>${esc(item[1])}</b><small>${esc(item[3])}</small></span><strong>${item[2]} CR</strong></button>`).join("")}</aside>
       <section class="evidence-console"><div class="panel-title">Analysis console <span>${esc(config[1])}</span></div><div class="analysis-config"><div><span>SELECTED TOOL</span><b>${esc(config[1])}</b><p>${esc(config[3])}</p></div>${global ? "" : `<label>Primary channel<select id="analysis-feature">${data.features.map(name => `<option value="${name}" ${analysisFeature === name ? "selected" : ""}>${esc(featureName(name))}</option>`).join("")}</select></label>`}${pair ? `<label>Comparison channel<select id="analysis-second">${data.features.filter(name => name !== analysisFeature).map(name => `<option value="${name}" ${analysisSecond === name ? "selected" : ""}>${esc(featureName(name))}</option>`).join("")}</select></label>` : ""}<button id="run-analysis" class="btn btn--primary" ${featureResult || analysisCredits < config[2] ? "disabled" : ""}>Run · ${config[2]} credits</button></div><div class="analysis-status">${esc(featureStatus || "Purchased evidence can be reopened without spending again.")}</div><div class="findings">${findings.length ? findings.map(findingHtml).join("") : `<div class="empty-finding"><b>NO INVESTIGATION PURCHASED</b><span>Choose a tool and spend credits to reveal evidence.</span></div>`}</div></section></div>
     <section class="selection-board"><div class="panel-title">Ten-channel lock <span>${selectedFeatures.size}/10 selected</span></div><div class="pick-grid">${orderedFeatures.map(name => `<button class="pick feature ${selectedFeatures.has(name) ? "chosen" : ""}" data-feature="${name}" ${featureResult ? "disabled" : ""}><b>${selectedFeatures.has(name) ? "✓" : "+"}</b><span>${esc(featureName(name))}<small>${esc(featureFamily(name))} channel</small></span></button>`).join("")}</div>${featureResult ? `<div class="feature-score"><strong>${featureResult.score}</strong><span>EVENT 3 SCORE</span><div><small>High-value seats</small><b>${featureResult.strongCount}/10</b></div><div><small>Credits spent</small><b>${featureResult.spent}/10</b></div></div><div class="stage-actions"><span class="recovery-message success">${esc(featureResult.message)}</span><button class="btn btn--primary" data-next="quality" ${nextStageOpen ? "" : "disabled"}>→ ${nextStageOpen ? "Open Event 4" : "Waiting for host to open Event 4"}</button></div>` : `<div class="feature-lock"><span>${esc(featureStatus || "Investigate first, then commit up to ten channels. Missing channels are completed with a penalty.")}</span><b>${selectedFeatures.size}/10</b><button id="lock-features" class="btn btn--primary">Lock selection</button></div>`}</section>`;
@@ -465,7 +446,7 @@ function renderForecast() {
   const runCost = 1 + parameterCost;
   const parameterControls = Object.entries(catalog.parameters).map(([name, options]) => { const values = Array.isArray(selected[name]) ? selected[name] : [selected[name]]; return `<label>${esc(name.replaceAll("_", " "))}<select multiple size="${Math.min(4, options.length)}" data-hyperparameter="${esc(name)}" ${forecastLocked ? "disabled" : ""}>${options.map(([value, cost]) => `<option value="${value === null ? "__null__" : esc(value)}" data-cost="${cost}" ${values.some(candidate => String(candidate) === String(value)) ? "selected" : ""}>${value === null ? "None" : esc(value)} · ${cost} CR</option>`).join("")}</select></label>`; }).join("");
   return `${sectionIntro("4", "Model Handoff", "After cleaning, configure and generate fixed model notebooks, execute them locally, and download the resulting submission file before the combined handoff timer expires.", ["Manual Override", "Feature Hunt", "Repair + Model Handoff"])}
-    <section class="incident-ribbon"><div><small>FINAL TEST FEED</small><b>${data.recordCounts.finalTest} unseen rows</b></div><div><small>MODEL RUNS</small><b>${forecastRuns.length}</b></div><div><small>EVENT 4 CREDITS</small><b>${event4CreditsRemaining()}/${REPAIR_BUDGET}</b></div><div><small>HANDOFF WINDOW</small><b id="forecast-timer-value">${formatForecastCountdown()}</b></div></section>
+    <section class="incident-ribbon incident-ribbon--3"><div><small>FINAL TEST FEED</small><b>${data.recordCounts.finalTest} unseen rows</b></div><div><small>MODEL RUNS</small><b>${forecastRuns.length}</b></div><div><small>EVENT 4 CREDITS</small><b>${event4CreditsRemaining()}/${REPAIR_BUDGET}</b></div></section>
     <section class="card"><div class="panel-title">Model choice <span>One real scikit-learn pipeline per notebook run</span></div><div class="model-grid">${models.map(item => `<button class="model ${model === item[0] ? "selected" : ""}" data-model="${item[0]}"><span>RANDOMIZED SEARCH</span><b>${esc(item[0])}</b><i class="protocol-name">IMPUTE · SCALE · TUNE</i><small>${esc(item[1])}</small></button>`).join("")}</div></section>
     <section class="card"><div class="panel-title">Hyperparameter controls <span>${esc(model)} · this run costs ${runCost} CR</span></div><div class="analysis-config">${parameterControls}<label>Random-search trials<input id="tuning-trials" type="number" min="5" max="100" value="${tuning.trials}" ${forecastLocked ? "disabled" : ""}></label><label>Stratified CV folds<input id="tuning-folds" type="number" min="3" max="10" value="${tuning.folds}" ${forecastLocked ? "disabled" : ""}></label><label>Random seed<input id="tuning-seed" type="number" min="0" max="999999" value="${tuning.randomState}" ${forecastLocked ? "disabled" : ""}></label></div><div class="analysis-status">Dropdown values are discrete choices. Each selection has a visible credit cost; every generated notebook is fixed to this run configuration.</div></section>
     <section class="card"><div class="panel-title">Notebook delivery <span>${outputNames}</span></div><div class="stage-actions"><span class="recovery-message">${esc(forecastStatus || (forecastLocked ? "The handoff window has expired. Notebook generation is locked." : "Generate a notebook to download it immediately. Your repair selections stay editable for the next run."))}</span><button id="generate-kaggle" class="btn btn--primary" ${forecastLocked || event4CreditsRemaining() < runCost ? "disabled" : ""}>${forecastLocked ? "Generation locked" : `Generate and download · ${runCost} CR`}</button></div></section>
