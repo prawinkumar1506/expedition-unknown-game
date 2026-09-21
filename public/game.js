@@ -65,7 +65,7 @@ const hydrate = room => {
   if (!stageIsUnlocked(stage)) stage = stageOrder.find(name => stageIsUnlocked(name)) || "event1";
   checkpoint();
 };
-const pollRoomControl = async () => { try { const result = await request("/api/room", { action: "get", pin: session.room }); const previousUnlocks = JSON.stringify(roomControl.stageUnlocks || {}); roomControl = result.room; if (previousUnlocks !== JSON.stringify(roomControl.stageUnlocks || {})) render(); } catch {} };
+const pollRoomControl = async () => { try { const result = await request("/api/room", { action: "get", pin: session.room, player: session.player }); const previousUnlocks = JSON.stringify(roomControl.stageUnlocks || {}); roomControl = result.room; if (previousUnlocks !== JSON.stringify(roomControl.stageUnlocks || {})) render(); } catch {} };
 document.addEventListener("click", () => checkpoint());
 document.addEventListener("change", () => checkpoint());
 
@@ -559,7 +559,7 @@ download.onclick = () => { if (!kaggleScript) return; try { JSON.parse(kaggleScr
   document.querySelectorAll("[data-stage]").forEach(button => button.onclick = () => setStage(button.dataset.stage));
 window.addEventListener("beforeunload", () => checkpoint());
 setInterval(() => checkpoint(), 5000);
-Promise.all([request("/api/mission", session), request("/api/room", { action: "get", pin: session.room })]).then(([result, roomResult]) => {
+Promise.all([request("/api/mission", session), request("/api/room", { action: "get", pin: session.room, player: session.player })]).then(([result, roomResult]) => {
   data = result; analysisFeature = data.features[0]; analysisSecond = data.features[1]; hydrate(roomResult.room);
   statusText.textContent = `${result.mission.scope.toUpperCase()} · ROOM ${session.room} · ${result.recordCounts.trainingDelivered} TRAIN / ${result.recordCounts.finalTest} TEST`;
   render();

@@ -6,6 +6,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="/vendor/adminator/style.76ee5eee.css">
+  <link rel="stylesheet" href="/host-dashboard.css">
 </head>
 <body>
   <div class="shell">
@@ -21,6 +22,8 @@
         <section class="grid">
           <article class="card col-12"><div class="card-head"><div class="card-title-wrap"><span class="eyebrow">CONNECTED TEAMS</span><h2 class="card-title">Restoration roster · <span id="player-count">0</span></h2></div></div><div id="players" class="real-players"><span>Waiting for the first team…</span></div></article>
           <article class="card col-12"><div class="card-head"><div class="card-title-wrap"><span class="eyebrow">STAGE AUTHORITY</span><h2 class="card-title">Unlock and monitor all five stages</h2></div></div><div id="stage-controls" class="real-players"><span>Waiting for room state…</span></div></article>
+          <article class="card col-12 leaderboard-card"><div class="card-head"><div class="card-title-wrap"><span class="eyebrow">CUMULATIVE LEADERBOARD</span><h2 class="card-title">Overall restoration standings</h2><p class="host-card-note">Each completed stage contributes up to 100 points. Event 1 is pass/fail; Events 2–4 use their normalized stage score. Unfinished stages remain at zero, for a maximum of 400 points.</p></div><span id="leaderboard-updated" class="tag t-info">LIVE</span></div><div id="overall-leaderboard"><div class="host-empty">Waiting for team scores…</div></div></article>
+          <article class="card col-12 inspector-card"><div class="card-head inspector-head"><div class="card-title-wrap"><span class="eyebrow">TEAM INSPECTOR</span><h2 class="card-title">Drill into a team's decisions</h2><p class="host-card-note">Server progress, submitted scores and audit events are shown here. Signed state tokens are intentionally hidden.</p></div><label class="inspector-select">Team<select id="inspector-team"><option value="">Select a team…</option></select></label></div><div id="team-inspector"><div class="host-empty">Choose a team from the leaderboard or selector to inspect its run.</div></div></article>
           <article class="card col-12"><div class="card-head"><div class="card-title-wrap"><span class="eyebrow">EVENT 1 · ARCHIVE RECONSTRUCTION</span><h2 class="card-title">Initial site recovery</h2></div></div><div id="event1-scoreboard" class="real-players"><span>No Event 1 results yet.</span></div></article>
           <article class="card col-12"><div class="card-head"><div class="card-title-wrap"><span class="eyebrow">EVENT 2 · QUICKREAD SCOREBOARD</span><h2 class="card-title">Manual Override results</h2></div></div><div id="event2-scoreboard" class="real-players"><span>No Event 2 results yet.</span></div></article>
           <article class="card col-12"><div class="card-head"><div class="card-title-wrap"><span class="eyebrow">EVENT 3 · FEATURE QUALITY SCOREBOARD</span><h2 class="card-title">Feature lock results</h2></div></div><div id="event3-scoreboard" class="real-players"><span>No Event 3 results yet.</span></div></article>

@@ -24,8 +24,29 @@ test("host room can be restored after refresh and explicitly closed without dele
   await roomHandler({ method: "POST", body: { action: "join", pin: room.pin, player: "late-team" } }, latePlayer);
   assert.equal(latePlayer.statusCode, 200);
   const progress = response();
-  await roomHandler({ method: "POST", body: { action: "saveProgress", pin: room.pin, player: "archive-team", progress: { stage: "event1" } } }, progress);
+  await roomHandler({ method: "POST", body: { action: "saveProgress", pin: room.pin, player: "archive-team", progress: { stage: "event1", selectedFeatures: ["vehicle_count"] } } }, progress);
   assert.equal(progress.statusCode, 200);
+
+  const publicView = response();
+  await roomHandler({ method: "POST", body: { action: "get", pin: room.pin } }, publicView);
+  assert.deepEqual(publicView.body.room.progress, {});
+  assert.deepEqual(publicView.body.room.scores, []);
+  assert.deepEqual(publicView.body.room.activity, []);
+
+  const playerView = response();
+  await roomHandler({ method: "POST", body: { action: "get", pin: room.pin, player: "archive-team" } }, playerView);
+  assert.deepEqual(Object.keys(playerView.body.room.progress), ["archive-team"]);
+  assert.deepEqual(playerView.body.room.progress["archive-team"].selectedFeatures, ["vehicle_count"]);
+
+  const hostView = response();
+  await roomHandler({ method: "POST", body: { action: "get", pin: room.pin, hostToken } }, hostView);
+  assert.equal(hostView.statusCode, 200);
+  assert.ok(hostView.body.room.progress["archive-team"]);
+  assert.ok(Array.isArray(hostView.body.room.activity));
+
+  const badHost = response();
+  await roomHandler({ method: "POST", body: { action: "get", pin: room.pin, hostToken: "wrong-token" } }, badHost);
+  assert.equal(badHost.statusCode, 409);
 
   const closed = response();
   await roomHandler({ method: "POST", body: { action: "close", pin: room.pin, hostToken } }, closed);
