@@ -1,7 +1,7 @@
 {
   "seed": 42,
   "n_train": 2000,
-  "n_train_delivered": 2030,
+  "n_train_delivered": 2000,
   "n_test": 500,
   "label_noise": 0.07,
   "classes": [

@@ -25,7 +25,7 @@ async function sealedFlow(room = "731904", player = "grid-cell") {
 
 test("the supplied package loads the exact event-scale train/test tiers", async () => {
   const event = assignment("100001"), mission = await invoke(missionHandler, { room: "100001", player: "auditor" });
-  assert.equal(event.trainDamaged.length, 2030);
+  assert.equal(event.trainDamaged.length, 2000);
   assert.equal(event.trainClean.length, event.trainDamaged.length);
   assert.equal(event.test.length, 500);
   assert.equal(event.features.length, 21);

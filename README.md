@@ -56,7 +56,7 @@ Upload the supplied traffic CSV files as a Kaggle Dataset before running the cel
 
 `data/traffic/` contains the package files used by the server:
 
-- `train_16.csv`: 2,030 delivered rows, 16 features, deliberately damaged
+- `train_16.csv`: 2,000 delivered rows, 16 features, deliberately damaged
 - `train_clean_16.csv`: organizer-side 2,000-row canonical archive
 - `test_16.csv`: clean 500-row hidden feed without labels
 - `test_truth.csv`: server-side final answer key
