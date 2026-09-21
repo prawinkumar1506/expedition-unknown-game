@@ -153,21 +153,33 @@ test("Event 4 reports credit spend and elapsed time in the sealed quality payloa
   assert.equal(result.body.timeTakenSeconds, 273);
 });
 
-test("Event 5 generates a model-specific .ipynb notebook that reads train16/test16 CSVs and keeps source data untouched", () => {
-  const tuning = normalizeTuning({ trials: 27, folds: 5, randomState: 90210 });
-  const notebook = buildKaggleScript({ model: "Random Forest", features: assignment("500005").features.slice(0, 10), repairs: { missingColumns: ["vehicle_count"], outlierColumns: [], labelRecords: [], duplicateGroups: [] }, tuning, notebook: true });
-  assert.match(notebook, /"cells"/); assert.match(notebook, /"nbformat"/); assert.match(notebook, /submission\.csv/); assert.match(notebook, /submission\.to_csv\(.*submission\.csv.*index=False/i); assert.match(notebook, /classification_report/); assert.match(notebook, /pd\.read_csv\(\\"train_16\.csv\\"\)|pd\.read_csv\(\\'train_16\.csv\\'\)/i); assert.match(notebook, /pd\.read_csv\(\\"test_16\.csv\\"\)|pd\.read_csv\(\\'test_16\.csv\\'\)/i); assert.doesNotMatch(notebook, /train16\.csv|test16\.csv/); assert.doesNotMatch(notebook, /read_csv\(.*train16\.csv.*\)/);
-  const backup = buildKaggleScript({ model: "Support Vector Machine", features: assignment("500005").backupFeatures, emergencyFeed: true, notebook: true });
-  assert.match(backup, /train_backup_10\.csv/); assert.match(backup, /test_backup_10\.csv/); assert.match(backup, /SVC\(kernel=/);
-  assert.equal(kaggleFilename("Decision Tree", "ipynb"), "decision-tree-randomized-search.ipynb");
+test("Round 4 generates ensemble notebooks for the participant train/test pair", () => {
+  const tuning = normalizeTuning({ randomState: 90210 });
+  const notebook = JSON.parse(buildKaggleScript({ model: "Random Forest", features: assignment("500005").features.slice(0, 10), repairs: { missingColumns: ["vehicle_count"], outlierColumns: [] }, tuning, notebook: true }));
+  const code = notebook.cells.find(cell => cell.cell_type === "code").source.join("");
+  assert.equal(notebook.nbformat, 4);
+  assert.match(code, /TRAIN_FILE = "train_16.csv"/);
+  assert.match(code, /TEST_FILE = "test_16.csv"/);
+  assert.match(code, /submission.to_csv\("submission.csv", index=False\)/);
+  assert.match(code, /classification_report/);
+  assert.match(code, /randomized_search_results.csv/);
+  assert.match(code, /best_model_evaluation.json/);
+  assert.doesNotMatch(code, /test_truth|train_clean|time.sleep/);
+  const backup = buildKaggleScript({ model: "Stacked Ensemble", features: assignment("500005").backupFeatures, emergencyFeed: true, notebook: true });
+  assert.match(backup, /train_backup_10.csv/);
+  assert.match(backup, /test_backup_10.csv/);
+  assert.match(backup, /StackingClassifier/);
+  assert.equal(kaggleFilename("Random Forest"), "random-forest-ensemble-search.ipynb");
 });
 
-test("the combined repair and model handoff stage enforces a 60-minute window", async () => {
+test("Round 4 lasts 90 minutes and completion opens after 60 minutes", async () => {
+  const { ROUND4 } = await import("../public/round4-config.js");
+  assert.equal(ROUND4.durationSeconds, 90 * 60);
+  assert.equal(ROUND4.minimumSeconds, 60 * 60);
   const fs = await import("node:fs/promises");
   const source = await fs.readFile(new URL("../public/game.js", import.meta.url), "utf8");
-  assert.match(source, /QUALITY_TIMEOUT_SECONDS\s*=\s*60\s*\*\s*60/);
-  assert.match(source, /forecastLocked|combined.*timer|60-minute|60 minute/i);
-  assert.match(source, /generateKaggle|generate.*notebook.*expired|notebook.*locked/i);
+  assert.match(source, /round4Elapsed\(\) < ROUND4.minimumSeconds/);
+  assert.match(source, /if \(round4Closed\(\) \|\| generatingNotebook\) return/);
 });
 
 test("the retired camera route states that Event 2 is tabular", () => {

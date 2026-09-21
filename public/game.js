@@ -27,9 +27,8 @@ let model = "Random Forest", tuning = normalizeTuning(), hyperparameters = {}, f
 let forecastTimeSpentSec = 0, forecastTimerId = null, forecastTimerStart = 0;
 let roomControl = { stageUnlocks: { global: ["event1"], players: {} } }, checkpointTimer = null;
 const FEATURE_TIMEOUT_SECONDS = 30 * 60;
-// Retained for compatibility with the original combined-stage contract.
-const QUALITY_TIMEOUT_SECONDS = 60 * 60;
-const ROUND4_TIMEOUT_SECONDS = ROUND4.durationSeconds;
+const QUALITY_TIMEOUT_SECONDS = ROUND4.durationSeconds;
+const ROUND4_TIMEOUT_SECONDS = QUALITY_TIMEOUT_SECONDS;
 const EVENT1_TIMEOUT_SECONDS = 15 * 60;
 const FORECAST_TIMEOUT_SECONDS = ROUND4_TIMEOUT_SECONDS;
 const stageStorageKey = `clearway-progress:${session?.room || "unknown"}:${session?.player || "unknown"}`;
@@ -50,6 +49,8 @@ const applyState = saved => {
   repairs = { missingColumns: new Set(saved.repairs?.missingColumns || []), outlierColumns: new Set(saved.repairs?.outlierColumns || []) }; repairMethods = saved.repairMethods || { missing: {}, outlier: {} };
   emergencyFeed = Boolean(saved.emergencyFeed); qualityState = saved.qualityState || ""; qualityResult = saved.qualityResult || null; model = Object.hasOwn(modelCatalog, saved.model) ? saved.model : "Random Forest"; tuning = saved.tuning || tuning; hyperparameters = saved.hyperparameters || {}; forecastRuns = Array.isArray(saved.forecastRuns) ? saved.forecastRuns : []; kaggleScript = saved.kaggleScript || ""; forecastStatus = saved.forecastStatus || ""; forecastLocked = Boolean(saved.forecastLocked); kaggleSubmitted = Boolean(saved.kaggleSubmitted);
   const starts = saved.stageStartedAt || {}; event1TimerStart = Number(starts.event1 || 0); manualTimerStart = Number(starts.manual || 0); featureTimerStart = Number(starts.features || 0); qualityTimerStart = Number(starts.quality || 0); forecastTimerStart = Number(starts.forecast || 0);
+  qualityTimeSpentSec = Math.min(ROUND4_TIMEOUT_SECONDS, qualityResult?.status === "COMPLETED" ? Number(qualityResult.timeTakenSeconds || 0) : round4Elapsed());
+  forecastTimeSpentSec = qualityTimeSpentSec;
 };
 const checkpoint = () => {
   const progress = serializeState();
@@ -412,6 +413,7 @@ const sealQualityRound = async () => {
       timeTakenSeconds: qualityTimeSpentSec
     });
     qualityState = qualityResult.qualityState;
+    if (round4Closed() && qualityResult.status !== "COMPLETED") qualityResult.status = "TIME_EXPIRED";
     qualityStatus = qualityResult.message;
     await saveQualityResult(qualityResult);
     highestStage = Math.max(highestStage, 4);
@@ -437,15 +439,17 @@ const submitEvent4 = async () => {
   }
   const submittedAt = Date.now();
   const timeTakenSeconds = Math.min(ROUND4_TIMEOUT_SECONDS, Math.max(0, Math.floor((submittedAt - qualityTimerStart) / 1000)));
+  const completedResult = { ...qualityResult, status: "COMPLETED", timeTakenSeconds };
+  // Persist before locking so a temporary save failure can be retried.
+  await saveQualityResult(completedResult);
   clearInterval(qualityTimerId);
   clearInterval(forecastTimerId);
   qualityTimerId = null;
   forecastTimerId = null;
   qualityTimeSpentSec = timeTakenSeconds;
   forecastTimeSpentSec = timeTakenSeconds;
-  qualityResult = { ...qualityResult, status: "COMPLETED", timeTakenSeconds };
+  qualityResult = completedResult;
   forecastLocked = true;
-  await saveQualityResult(qualityResult);
   forecastStatus = "Event 4 submitted. The model handoff and completion time are recorded.";
   checkpoint();
   render();

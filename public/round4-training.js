@@ -107,6 +107,11 @@ class RepairedClassifier(ClassifierMixin, BaseEstimator):
         return self.classifier_.predict(self._transform(X))
 
 # SELECTED_CLASSIFIER
+# JSON does not distinguish 1 from 1.0. These controls represent fractions;
+# an integer 1 would instead select ONE sample/feature in bagging and forests.
+for parameter_name in PARAMETERS:
+    if parameter_name.split('__')[-1] in {'max_samples', 'max_features', 'subsample'}:
+        PARAMETERS[parameter_name] = [float(value) for value in PARAMETERS[parameter_name]]
 grid = list(ParameterGrid(PARAMETERS))
 rng = np.random.default_rng(RANDOM_STATE)
 records, aggregates, fit_estimates = [], {}, {}
