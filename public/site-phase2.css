@@ -257,9 +257,16 @@
 
 :root[data-theme="light"] .game-workspace .finding > header,
 :root[data-theme="light"] .game-workspace .analysis-table thead,
-:root[data-theme="light"] .game-workspace .matrix-toolbar {
+:root[data-theme="light"] .game-workspace .matrix-toolbar,
+:root[data-theme="light"] .game-workspace .data-table thead th {
   background: #f3f6f9 !important;
   color: #17202b !important;
+}
+
+:root[data-theme="light"] .game-workspace .feature-lock,
+:root[data-theme="light"] .game-workspace .feature-score {
+  background: #f3f6f9 !important;
+  border-top-color: #dbe1e8 !important;
 }
 
 /* The top mission chrome was the remaining low-contrast light-theme area. */
