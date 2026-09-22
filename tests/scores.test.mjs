@@ -14,7 +14,7 @@ test("scores endpoint persists normalized score rows and activity records", asyn
   database.prepare("INSERT INTO game_players (room_pin, name, joined_at) VALUES (?, ?, ?)").run(room, player, now);
   try {
     const write = response();
-    await scoresHandler({ method: "POST", body: { room, player, stage: "quality", payload: { score: 74, credits: 12, timeTakenSeconds: 91, emergencyFeed: false } }, url: "/api/scores" }, write);
+    await scoresHandler({ method: "POST", body: { room, player, stage: "quality", payload: { score: 74, credits: 12, timeTakenSeconds: 91 } }, url: "/api/scores" }, write);
     assert.equal(write.statusCode, 200);
     assert.equal(write.body.score.score, 74);
 

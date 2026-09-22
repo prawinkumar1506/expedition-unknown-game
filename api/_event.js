@@ -57,17 +57,13 @@ let cache;
 function loadData() {
   if (cache) return cache;
   const trainDamaged = readCsv("train_16.csv"), test = readCsv("test_16.csv"), strengthRows = readCsv("feature_strength_table.csv");
-  const trainBackup = readCsv("train_backup_10.csv"), testBackup = readCsv("test_backup_10.csv");
   cache = {
     trainDamaged,
     trainClean: readOptionalCsv("train_clean_16.csv", trainDamaged),
     test,
     truth: new Map(readCsv("test_truth.csv").map(row => [row.event_id, row.label])),
-    trainBackup,
-    testBackup,
     corruptionLog: readCsv("corruption_log.csv"),
     featureStrength: Object.fromEntries(strengthRows.map(row => [row.feature, row])),
-    backupFeatures: Object.keys(trainBackup[0]).filter(key => !["event_id", "label"].includes(key)),
     metadata: JSON.parse(readFileSync(new URL("../data/traffic/generation_metadata.json", import.meta.url), "utf8")),
     features: Object.keys(trainDamaged[0]).filter(key => !["event_id", "label"].includes(key))
   };

@@ -5,11 +5,6 @@ import { packState, verifyState } from "./_state.js";
 const COSTS = { missing: 3, outlier: 3 };
 const LIMITS = { missing: 10, outlier: 10 };
 const BUDGET = 50;
-export const EMERGENCY_REPAIR_COST = 30;
-// This is a recovery route, not an alternate optimal build. Four or fewer
-// strong channels means the locked selection cannot outperform the fixed backup.
-export const EMERGENCY_MAX_STRONG_CHANNELS = 4;
-export const EMERGENCY_QUALITY_SCORE = 35;
 const unique = values => [...new Set(Array.isArray(values) ? values.map(value => String(value || "").slice(0, 64)) : [])];
 
 export function buildQualityPlan(event, features, room = "fixed") {
@@ -91,17 +86,11 @@ export default function handler(req, res) {
     const featureState = verifyState(req.body?.featureState, "features", room, player), event = assignment(room);
     const plan = buildQualityPlan(event, featureState.selected, room);
     const timeTakenSeconds = Number(req.body?.timeTakenSeconds || 0);
-    if (action === "plan") return json(res, 200, { plan, lockedFeatures: featureState.selected, emergencyFeatures: event.backupFeatures });
+    if (action === "plan") return json(res, 200, { plan, lockedFeatures: featureState.selected });
     if (action !== "seal") return json(res, 400, { error: "Choose plan or seal." });
-    const emergencyFeed = Boolean(req.body?.emergencyFeed);
-    if (emergencyFeed) {
-      if (featureState.strongCount > EMERGENCY_MAX_STRONG_CHANNELS) throw new Error(`Emergency Feed is available only after a failed Feature Hunt lock (${EMERGENCY_MAX_STRONG_CHANNELS} or fewer strong channels).`);
-      const qualityState = packState("quality", { room, player, features: event.backupFeatures, featureScore: 0, qualityScore: EMERGENCY_QUALITY_SCORE, emergencyFeed: true, repairs: { missingColumns: [], outlierColumns: [] }, methods: { missing: {}, outlier: {} }, repairSpend: EMERGENCY_REPAIR_COST, timeTakenSeconds });
-      return json(res, 200, { sealed: true, emergencyFeed: true, features: event.backupFeatures, featureScore: 0, qualityScore: EMERGENCY_QUALITY_SCORE, repairSpend: EMERGENCY_REPAIR_COST, repairBudget: BUDGET, timeTakenSeconds, qualityState, message: `Emergency Telemetry Feed locked. ${EMERGENCY_REPAIR_COST} repair credits were charged; Event 3 is forfeited and Event 4 is capped at 35/100.` });
-    }
-    const { repairs, methods, spend } = validateRepairs(plan, req.body?.repairs), qualityScore = scoreRepairPlan(plan, repairs);
-    const qualityState = packState("quality", { room, player, features: featureState.selected, featureScore: featureState.score, qualityScore, emergencyFeed: false, repairs, methods, repairSpend: spend, timeTakenSeconds });
-    return json(res, 200, { sealed: true, emergencyFeed: false, features: featureState.selected, featureScore: featureState.score, qualityScore, repairSpend: spend, repairBudget: BUDGET, methods, timeTakenSeconds, qualityState, message: `Cleaning plan sealed: ${spend}/${BUDGET} repair credits spent, repair effectiveness ${qualityScore}/100.` });
+    const { repairs, methods, spend } = validateRepairs(plan, { ...req.body?.repairs, missingMethods: req.body?.missingMethods, outlierMethods: req.body?.outlierMethods }), qualityScore = scoreRepairPlan(plan, repairs);
+    const qualityState = packState("quality", { room, player, features: featureState.selected, featureScore: featureState.score, qualityScore, repairs, methods, repairSpend: spend, timeTakenSeconds });
+    return json(res, 200, { sealed: true, features: featureState.selected, featureScore: featureState.score, qualityScore, repairSpend: spend, repairBudget: BUDGET, methods, timeTakenSeconds, qualityState, message: `Cleaning plan sealed: ${spend}/${BUDGET} repair credits spent, repair effectiveness ${qualityScore}/100.` });
   } catch (error) {
     const message = ["STATE_REQUIRED", "INVALID_STATE"].includes(error.message) ? "The Feature Hunt seal could not be verified. Reload the mission." : error.message;
     return json(res, 409, { error: message });
