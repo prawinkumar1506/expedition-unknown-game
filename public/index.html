@@ -2,10 +2,14 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <script>document.documentElement.dataset.theme=localStorage.getItem('clearway-theme')||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark')</script>
   <title>SIGNAL LOST // Join Operation Clearway</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="/vendor/adminator/style.76ee5eee.css">
+  <link rel="stylesheet" href="/typography.css">
+  <link rel="stylesheet" href="/theme-ui.css">
+  <link rel="stylesheet" href="/site-phase2.css">
   <link rel="stylesheet" href="/readability.css">
 </head>
 <body>
@@ -36,6 +40,7 @@
       <div class="auth-main-bottom">Powered by the Adminator 4.3.0 interface template · MIT licensed.</div>
     </main>
   </div>
+  <script src="/theme.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

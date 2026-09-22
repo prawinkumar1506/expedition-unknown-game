@@ -1,0 +1,320 @@
+/* Clearway typography system — shared across every page */
+:root {
+  --font-ui: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: "Inter Tight", var(--font-ui);
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --fs-body: 14px;
+  --fs-small: 12px;
+  --fs-label: 10px;
+  --fs-title: 32px;
+}
+
+html, body {
+  font-family: var(--font-ui) !important;
+  font-size: var(--fs-body) !important;
+  font-weight: 400;
+  line-height: 1.55;
+  letter-spacing: -0.003em;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body,
+button,
+input,
+textarea,
+select,
+option {
+  font-family: var(--font-ui) !important;
+}
+
+h1, h2, h3, h4, h5, h6,
+.hero-title,
+.card-title,
+.auth-card h2,
+.auth-aside h1,
+.story-brief h1,
+.epilogue h2,
+.repair-case-head h3,
+.emergency-body h3,
+.image-workbench h1,
+.host-console h1,
+.wait-room h1 {
+  font-family: var(--font-display) !important;
+  font-style: normal !important;
+  letter-spacing: -0.035em;
+}
+
+h1 { font-size: clamp(36px, 5vw, 54px); line-height: 1.04; font-weight: 700; }
+h2 { font-size: 26px; line-height: 1.12; font-weight: 700; }
+h3 { font-size: 18px; line-height: 1.25; font-weight: 650; }
+h4 { font-size: 15px; line-height: 1.3; font-weight: 650; }
+
+p, li, td, th, label, input, select, textarea {
+  font-family: var(--font-ui) !important;
+}
+
+.hero-title,
+.auth-aside h1 { font-size: clamp(40px, 5.2vw, 58px) !important; line-height: 1.02 !important; font-weight: 700 !important; }
+.card-title { font-size: 20px !important; line-height: 1.2 !important; font-weight: 650 !important; }
+.hero-sub,
+.auth-card .sub,
+.auth-aside-body > p { font-size: 14px !important; line-height: 1.65 !important; }
+
+.eyebrow,
+.nav-label,
+.auth-aside-eyebrow,
+.auth-quote-author,
+.d-footer,
+.d-footer-meta,
+.panel-title,
+.protocol-grid span,
+.story-brief > span,
+.story-beats span,
+.incident-ribbon small,
+.stage-timer-label,
+.protocol-name,
+.analysis-status,
+.analysis-config label,
+.metric-grid small,
+.feature-lock > span,
+.feature-score small,
+.titlebar strong,
+.titlebar span,
+.signal,
+.kicker,
+.system-strip,
+.field-label,
+.auth-main-bottom {
+  font-family: var(--font-mono) !important;
+  font-size: var(--fs-label) !important;
+  line-height: 1.45;
+  letter-spacing: .10em;
+}
+
+.nav-link,
+.crumbs,
+.workspace-name,
+.btn,
+.primary,
+.secondary,
+.field-help,
+.real-players span,
+.auth-card .sub,
+.auth-quote,
+.auth-main-top,
+.stage span,
+.stage small,
+.model b,
+.pick,
+.card,
+.sub {
+  font-family: var(--font-ui) !important;
+}
+
+.nav-link { font-size: 13px !important; font-weight: 500 !important; line-height: 1.35 !important; }
+.nav-label { font-size: 10px !important; font-weight: 600 !important; }
+.nav-badge { font-family: var(--font-ui) !important; font-size: 9px !important; font-weight: 700 !important; }
+.crumbs { font-size: 13px !important; line-height: 1.4 !important; }
+.workspace-name { font-size: 13px !important; font-weight: 600 !important; }
+.workspace-role { font-size: 11px !important; }
+
+.btn,
+.primary,
+.secondary,
+.titlebar button,
+form button {
+  font-size: 12px !important;
+  font-weight: 650 !important;
+  letter-spacing: -.005em;
+}
+
+input,
+select,
+textarea,
+.manual-table select,
+.analysis-config select {
+  font-family: var(--font-ui) !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+}
+
+/* Keep data/telemetry values technical without making ordinary UI copy look like code. */
+code,
+kbd,
+.mono,
+.metric-grid strong,
+.analysis-table,
+.matrix-table,
+.data-table,
+.file-fingerprint code,
+.lab-progress b,
+.best-signal strong,
+.evaluation-kpis > div:last-child strong,
+.validation-list strong,
+.recovery-message,
+.range,
+.custody-console b,
+.custody-console small,
+.pick .pick-name,
+.budget,
+.model span,
+.model small,
+.queue-list > button span,
+.queue-list > button small,
+.camera-frame figcaption,
+.telemetry-dock > div b,
+.class-grid kbd,
+.error-box {
+  font-family: var(--font-mono) !important;
+}
+
+.protocol-grid b,
+.incident-ribbon b,
+.repair-case-head h3,
+.emergency-body h3,
+.game-workspace .model > b,
+.evaluation-kpis strong,
+.score-breakdown b,
+.finding > header b,
+.feature-score b,
+.class-grid b,
+.model b {
+  font-family: var(--font-display) !important;
+  font-weight: 650 !important;
+}
+
+.protocol-grid b { font-size: 15px !important; }
+.incident-ribbon b { font-size: 14px !important; }
+.repair-case-head h3,
+.emergency-body h3 { font-size: 18px !important; }
+.game-workspace .model > b { font-size: 17px !important; }
+.evaluation-kpis strong { font-size: 19px !important; }
+.score-breakdown b { font-size: 17px !important; }
+
+.story-brief h1 { font-size: clamp(30px, 4vw, 46px) !important; }
+.story-brief p { font-size: 14px !important; line-height: 1.65 !important; }
+.story-beats span { font-size: 10px !important; font-weight: 500 !important; }
+
+.card p,
+.finding > p,
+.repair-evidence p,
+.emergency-body p,
+.validation-empty,
+.telemetry-dock > p,
+.recovery-file > p,
+.custody-console p {
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+}
+
+.tool-catalog > button span b,
+.finding > header b,
+.class-grid b,
+.recovery-file header b,
+.manifest-window li b,
+.feature-score b {
+  font-family: var(--font-ui) !important;
+  font-weight: 650 !important;
+}
+
+.tool-catalog > button span b { font-size: 13px !important; }
+.tool-catalog > button span small,
+.analysis-config > div p,
+.recovery-file header small,
+.recovery-file > p,
+.manifest-window li small { font-size: 11px !important; }
+
+.analysis-config > div b { font-size: 14px !important; font-weight: 650 !important; }
+.metric-grid small { font-size: 9px !important; }
+.metric-grid strong { font-size: 15px !important; }
+.finding-callout strong { font-size: 28px !important; }
+
+.real-players span { font-size: 12px !important; line-height: 1.35 !important; }
+.empty-state b,
+.empty-finding b { font-family: var(--font-ui) !important; font-size: 13px !important; font-weight: 600 !important; }
+.empty-state span,
+.empty-finding span { font-size: 11px !important; }
+
+.auth-brand .name,
+.brand-name { font-family: var(--font-display) !important; font-weight: 700 !important; }
+.auth-brand .name { font-size: 16px !important; letter-spacing: -.02em; }
+.brand-name { font-size: 15.5px !important; }
+
+@media (max-width: 700px) {
+  :root { --fs-body: 13.5px; }
+  .hero-title,
+  .auth-aside h1 { font-size: clamp(34px, 10vw, 46px) !important; }
+  .card-title { font-size: 18px !important; }
+}
+
+/* User-controlled sidebar */
+.sidebar-toggle {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  margin-right: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--t-muted);
+  cursor: pointer;
+  transition: background .18s ease, color .18s ease, border-color .18s ease, transform .18s ease;
+}
+.sidebar-toggle:hover {
+  background: var(--bg-hover);
+  border-color: var(--primary);
+  color: var(--t-base);
+}
+.sidebar-toggle span {
+  width: 15px;
+  height: 1.5px;
+  border-radius: 2px;
+  background: currentColor;
+  transition: transform .2s ease, opacity .2s ease;
+}
+.sidebar-toggle.is-collapsed span:nth-child(1) { transform: translateY(5.5px) rotate(45deg); }
+.sidebar-toggle.is-collapsed span:nth-child(2) { opacity: 0; }
+.sidebar-toggle.is-collapsed span:nth-child(3) { transform: translateY(-5.5px) rotate(-45deg); }
+
+.shell {
+  transition: grid-template-columns .24s cubic-bezier(.2,.7,.2,1);
+}
+.shell.sidebar-collapsed {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+.shell.sidebar-collapsed .d-sidebar {
+  width: 0;
+  min-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  border-right: 0;
+}
+.d-sidebar {
+  transition: width .24s cubic-bezier(.2,.7,.2,1), padding .24s cubic-bezier(.2,.7,.2,1), opacity .16s ease;
+}
+.sidebar-backdrop { display: none; }
+
+@media (max-width: 720px) {
+  .sidebar-toggle { margin-right: 6px; }
+  .shell.sidebar-collapsed .d-sidebar { width: 280px; }
+  body.has-sidebar-open { overflow: hidden; }
+  body.has-sidebar-open .d-sidebar { transform: translateX(0); }
+  body.has-sidebar-open .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 99;
+    background: rgba(15,23,42,.5);
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+  }
+}

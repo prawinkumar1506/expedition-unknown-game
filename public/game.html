@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <script>document.documentElement.dataset.theme=localStorage.getItem('clearway-theme')||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark')</script>
   <title>SIGNAL LOST // Operation Clearway</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -10,31 +11,35 @@
   <link rel="stylesheet" href="/vendor/adminator/style.76ee5eee.css">
   <link rel="stylesheet" href="/mission.css">
   <link rel="stylesheet" href="/game-adapter.css">
+  <link rel="stylesheet" href="/game-phase2.css">
+  <link rel="stylesheet" href="/typography.css">
+  <link rel="stylesheet" href="/theme-ui.css">
+  <link rel="stylesheet" href="/site-phase2.css">
   <link rel="stylesheet" href="/readability.css">
 </head>
 <body>
   <div class="shell">
     <aside class="d-sidebar">
       <div class="brand"><div class="brand-logo">C</div><div class="brand-text"><div class="brand-name">CLEARWAY</div><div class="brand-tag">GRID RESTORATION</div></div></div>
-      <nav class="nav-section">
+      <nav class="nav-section game-events">
         <div class="nav-label">Events in scope</div>
         <button class="nav-link stage" data-stage="event1"><span>Archive Reconstruction</span><span class="nav-badge hot">01</span></button>
         <button class="nav-link stage is-active active" data-stage="manual"><span>Manual Override</span><span class="nav-badge hot">02</span></button>
         <button class="nav-link stage" data-stage="features"><span>Feature Hunt</span><span class="nav-badge">03</span></button>
         <button class="nav-link stage" data-stage="quality"><span>Repair + Model Handoff</span><span class="nav-badge pro">04</span></button>
       </nav>
-      <div class="nav-section">
-        <div class="nav-label">Shared resources</div>
-        <div class="nav-link"><span>Investigation credits</span><span id="f-credit" class="nav-badge new">10 / 10</span></div>
-        <div class="nav-link"><span>Repair credits</span><span id="r-credit" class="nav-badge hot">15 / 15</span></div>
-        <div class="nav-link"><span>Kaggle search</span><span id="e-credit" class="nav-badge pro">25 trials</span></div>
+      <div class="team-profile" aria-label="Current team">
+        <div class="team-avatar" id="team-avatar">T</div>
+        <div class="team-profile-copy">
+          <span class="team-profile-label">RESTORATION CELL</span>
+          <strong id="team-profile-name">Your team</strong>
+        </div>
       </div>
-      <div class="sidebar-footer"><div class="workspace"><div class="workspace-avatar">MC</div><div class="workspace-text"><div class="workspace-name">Meridian City</div><div class="workspace-role">Grid Restoration Cell</div></div></div></div>
     </aside>
     <div class="main">
       <header class="d-topbar">
         <div class="crumbs"><span>Adaptive Traffic Control</span><span class="sep">/</span><span class="current" id="mission-status">Connecting…</span></div>
-        <div class="topbar-actions"><span id="stage-timers" class="tag t-old">E1 15:00 · E2 15:00 · E3 30:00 · E4–5 60:00</span><button id="export" class="btn btn--ghost" disabled>Download notebook</button></div>
+        <div class="topbar-actions"><div id="stage-timers" class="stage-timer" role="timer" aria-label="Time remaining for this stage"></div><button id="export" class="btn btn--ghost" disabled>Download notebook</button></div>
       </header>
       <main class="content">
         <section class="hero"><div class="hero-text"><span class="eyebrow">03:14 · CENTRAL MODEL OFFLINE</span><h1 class="hero-title">Operation <span class="accent">Clearway</span></h1><p class="hero-sub">Classify the queued junctions by hand, choose ten channels, repair the damaged archive, and predict the next 500 packets.</p></div></section>
@@ -44,6 +49,9 @@
     </div>
   </div>
   <div id="story-layer" class="palette-backdrop"></div>
+  <script src="/theme.js"></script>
+  <script src="/game-phase2.js"></script>
   <script type="module" src="/game.js"></script>
+  <script src="/sidebar.js"></script>
 </body>
 </html>

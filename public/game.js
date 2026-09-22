@@ -87,6 +87,7 @@ const formatFeatureCountdown = () => formatCountdown(FEATURE_TIMEOUT_SECONDS - f
 const formatQualityCountdown = () => formatCountdown(QUALITY_TIMEOUT_SECONDS - qualityTimeSpentSec);
 const formatEvent1Countdown = () => formatCountdown(EVENT1_TIMEOUT_SECONDS - event1TimeSpentSec);
 const formatForecastCountdown = () => formatCountdown(FORECAST_TIMEOUT_SECONDS - forecastTimeSpentSec);
+const stageTimerReaders = { event1: ["E1", formatEvent1Countdown], manual: ["E2", formatManualCountdown], features: ["E3", formatFeatureCountdown], quality: ["E4–5", formatQualityCountdown] };
 
 const persistScore = async (stageName, storageKey, payload) => {
   await request("/api/scores", { room: session.room, player: session.player, stage: stageName, payload });
@@ -310,7 +311,7 @@ const displayFeatures = () => {
   return features;
 };
 const number = value => Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
-const sectionIntro = (event, title, subtitle, beats) => `<section class="story-brief"><span>EVENT ${event} · ${esc(title.toUpperCase())}</span><h1>${esc(title.split(" ")[0])} <i>${esc(title.split(" ").slice(1).join(" "))}</i></h1>${(Array.isArray(subtitle) ? subtitle : [subtitle]).map(paragraph => `<p>${esc(paragraph)}</p>`).join("")}<div class="story-beats">${beats.map((beat, index) => `<span class="${index < stageOrder.indexOf(stage) ? "done" : index === stageOrder.indexOf(stage) ? "active" : ""}">${esc(beat)}</span>`).join("")}</div></section>`;
+const sectionIntro = (event, title, subtitle, beats) => `<section class="story-brief story-brief--event-${esc(event)}"><span>EVENT ${event} · ${esc(title.toUpperCase())}</span><h1>${esc(title.split(" ")[0])} <i>${esc(title.split(" ").slice(1).join(" "))}</i></h1><div class="story-description">${(Array.isArray(subtitle) ? subtitle : [subtitle]).map(paragraph => `<p>${esc(paragraph)}</p>`).join("")}</div><div class="story-beats">${beats.map((beat, index) => `<span class="${index < stageOrder.indexOf(stage) ? "done" : index === stageOrder.indexOf(stage) ? "active" : ""}">${esc(beat)}</span>`).join("")}</div></section>`;
 
 function setStage(next) {
   const index = stageOrder.indexOf(next); if (index < 0 || index > highestStage || !stageIsUnlocked(next)) return;
@@ -319,10 +320,10 @@ function setStage(next) {
   stage = next; if (stage === "event1" && !event1Result) event1TimerStart = event1TimerStart || Date.now(); if (stage === "manual" && !manualResult) manualTimerStart = manualTimerStart || Date.now(); if (stage === "features" && !featureResult) featureTimerStart = featureTimerStart || Date.now(); if (stage === "quality" && !qualityResult) qualityTimerStart = qualityTimerStart || Date.now(); if (stage === "forecast") forecastTimerStart = forecastTimerStart || Date.now(); checkpoint(); render(); if (stage === "event1") startEvent1Timer(); if (stage === "manual") startManualTimer(); if (stage === "features") startFeatureTimer(); if (stage === "quality") { startQualityTimer(); if (!qualityPlan && featureState) request("/api/quality", { room: session.room, player: session.player, action: "plan", featureState }).then(result => { qualityPlan = result.plan; qualityStatus = "Event 4 loaded from your sealed Event 3 feature set."; checkpoint(); render(); }).catch(error => { qualityStatus = `Event 4 could not load the repair plan yet: ${error.message}`; render(); }); } if (stage === "forecast") startForecastTimer(); window.scrollTo({ top: 0, behavior: "smooth" });
 }
 function updateChrome() {
-  featureCredit.textContent = `${analysisCredits} / 10`;
-  const spent = repairSpend(); repairCredit.textContent = `${event4CreditsRemaining()} / ${REPAIR_BUDGET}`;
-  evaluationCredit.textContent = `${event4CreditsRemaining()} Event 4 CR · ${formatCountdown(FORECAST_TIMEOUT_SECONDS - forecastTimeSpentSec)}`;
-  if (stageTimers) stageTimers.textContent = `E1 ${formatCountdown(EVENT1_TIMEOUT_SECONDS - event1TimeSpentSec)} · E2 ${formatCountdown(15 * 60 - manualTimeSpentSec)} · E3 ${formatCountdown(FEATURE_TIMEOUT_SECONDS - featureTimeSpentSec)} · E4–5 ${formatCountdown(QUALITY_TIMEOUT_SECONDS - qualityTimeSpentSec)}`;
+  if (featureCredit) featureCredit.textContent = `${analysisCredits} / 10`;
+  if (repairCredit) repairCredit.textContent = `${event4CreditsRemaining()} / ${REPAIR_BUDGET}`;
+  if (evaluationCredit) evaluationCredit.textContent = `${event4CreditsRemaining()} Event 4 CR · ${formatCountdown(FORECAST_TIMEOUT_SECONDS - forecastTimeSpentSec)}`;
+  if (stageTimers) { const [timerLabel, readTimer] = stageTimerReaders[stage] || ["E4–5", formatForecastCountdown]; stageTimers.innerHTML = `<span class="stage-timer-label">${timerLabel}</span><span class="stage-timer-value">${readTimer()}</span>`; }
   document.querySelectorAll("[data-stage]").forEach(button => { const index = stageOrder.indexOf(button.dataset.stage); button.classList.toggle("active", button.dataset.stage === stage); button.classList.toggle("is-active", button.dataset.stage === stage); button.disabled = index > highestStage || !stageIsUnlocked(button.dataset.stage); });
 }
 
