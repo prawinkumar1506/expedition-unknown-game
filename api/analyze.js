@@ -1,36 +1,13 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { clean, json } from "./_gateway.js";
-import { assignment, TRAFFIC_CLASSES } from "./_event.js";
+import { assignment, FEATURE_META, TRAFFIC_CLASSES } from "./_event.js";
 
 const CATALOG = {
   classprofiles: { cost: 2, scope: "feature" },
-  correlation: { cost: 2, scope: "global" },
+  correlation: { cost: 2, scope: "pair" },
   relationship: { cost: 2, scope: "pair" }
 };
 const BUDGET = 10;
-export const CLASS_PROFILE_EXPLANATIONS = {
-  vehicle_count: "Vehicle Count changes a lot between the different traffic classes. Heavy Traffic usually has many more vehicles, while Low Activity has far fewer. This sensor can help tell one traffic situation from another.",
-  avg_vehicle_speed_kmph: "Average Vehicle Speed changes clearly between traffic classes. Free Flow is usually much faster, while Heavy Traffic and Incidents are much slower. This sensor can help separate different traffic conditions.",
-  road_occupancy_pct: "Road Occupancy changes a lot across the traffic classes. Heavy Traffic and Incidents usually cover much more of the road, while Low Activity covers much less. This sensor can help identify the traffic situation.",
-  pedestrian_count: "Pedestrian Count changes strongly in some traffic classes. Pedestrian Events and Low Activity periods can show many more people than Incidents or Free Flow. This sensor can be useful for spotting situations where pedestrian activity matters.",
-  time_of_day_hr: "Time of Day does not change much between most traffic classes. It may give some useful context, but it probably cannot identify the traffic condition by itself.",
-  visibility_m: "Visibility changes in some traffic situations, especially around Incidents and Low Activity periods. It may be useful as extra information, but the classes are not always clearly separated by visibility alone.",
-  rain_intensity_mmhr: "Rain Intensity looks fairly similar across most traffic classes. It may still help in certain weather-related situations, but it is unlikely to tell the classes apart by itself.",
-  signal_wait_time_s: "Signal Wait Time changes clearly between traffic classes. Heavy Traffic and Pedestrian Events often have longer waits, while Low Activity usually has much shorter waits. This sensor can help distinguish different traffic conditions.",
-  road_wetness_pct: "Road Wetness stays fairly similar across most traffic classes. It may provide useful weather context, but it does not clearly separate the traffic situations on its own.",
-  incident_distance_m: "Incident Distance behaves very differently during Incidents. When an incident is present, the nearest obstruction is usually much closer than in the other traffic classes. This sensor can be very useful for identifying incident-related situations.",
-  noise_level_db: "Noise Level changes only a little between the traffic classes. Since most situations produce similar noise readings, this sensor may not help much when trying to tell the classes apart.",
-  ambient_temperature_c: "Ambient Temperature does not follow a clear traffic pattern. A few unusual readings can make some classes look different, but temperature is not a dependable way to identify the traffic condition.",
-  humidity_pct: "Humidity can change with the weather, but it does not follow the traffic classes consistently. It may add some context, but it is not a dependable sensor for telling the traffic situations apart.",
-  camera_exposure_score: "Camera Exposure changes mainly because of lighting conditions rather than the traffic situation itself. It may look different at certain times of day, but it is not a strong clue for identifying the traffic class.",
-  camera_focus_score: "Camera Focus stays almost the same across all traffic classes. Since the readings barely change, this sensor is unlikely to help distinguish one traffic situation from another.",
-  lane_marking_visibility_pct: "Lane Marking Visibility stays very similar across most traffic classes. Because the readings barely change between situations, this sensor may provide very little help in identifying the traffic class.",
-  driver_fatigue_index: "Driver Fatigue Index stays fairly similar across the traffic classes and does not follow a clear traffic pattern. This sensor is unlikely to help much when choosing between the different situations.",
-  brake_response_time_ms: "Brake Response Time is very similar across the traffic classes. The small changes do not form a clear pattern, so this sensor is unlikely to be useful for telling the classes apart.",
-  road_surface_friction_coeff: "Road Surface Friction is almost constant across all traffic classes. Because the value barely changes, this sensor gives very little information about which traffic situation is happening.",
-  collision_risk_score: "Collision Risk Score looks almost the same across the traffic classes. It comes from an older system and does not clearly follow the current traffic labels, so it may not help much here.",
-  near_miss_count: "Near Miss Count is usually very low and looks similar across the traffic classes. Since the value rarely changes, it provides little help in identifying the current traffic situation."
-};
 const secret = () => process.env.MATCH_GATEWAY_SECRET || "expedition-local-analysis-state";
 const sign = payload => createHmac("sha256", secret()).update(payload).digest("base64url");
 function pack(state) { const payload = Buffer.from(JSON.stringify(state)).toString("base64url"); return `${payload}.${sign(payload)}`; }
@@ -48,6 +25,15 @@ export function evidenceKey(type, scope, cohort, feature, secondFeature) { retur
 const round = value => Number.isFinite(value) ? Number(value.toFixed(4)) : null;
 const numeric = values => values.filter(value => value !== null && value !== undefined && Number.isFinite(Number(value))).map(Number);
 const mean = values => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : NaN;
+const featureLabel = feature => FEATURE_META[feature]?.label || String(feature).replaceAll("_", " ").replace(/\b\w/g, char => char.toUpperCase());
+const classLabel = label => String(label).replaceAll("_", " ");
+function median(values) { const ordered = [...values].sort((a, b) => a - b), n = ordered.length; return n ? (n % 2 ? ordered[(n - 1) / 2] : (ordered[n / 2 - 1] + ordered[n / 2]) / 2) : NaN; }
+function quantile(values, q) { const ordered = [...values].sort((a, b) => a - b); if (!ordered.length) return NaN; const position = (ordered.length - 1) * q, low = Math.floor(position), high = Math.ceil(position); return low === high ? ordered[low] : ordered[low] + (ordered[high] - ordered[low]) * (position - low); }
+function ranks(values) {
+  const indexed = values.map((value, index) => ({ value, index })).sort((a, b) => a.value - b.value), result = Array(values.length);
+  for (let start = 0; start < indexed.length;) { let end = start + 1; while (end < indexed.length && indexed[end].value === indexed[start].value) end++; const rank = (start + end - 1) / 2 + 1; for (let i = start; i < end; i++) result[indexed[i].index] = rank; start = end; }
+  return result;
+}
 function summary(rows, feature, corruptionLog = []) {
   const loggedMissing = new Set(corruptionLog.filter(item => item.problem === "missing_value" && item.column === feature).map(item => item.event_id));
   const missingRows = rows.filter(row => loggedMissing.has(row.event_id) || row[feature] === null || row[feature] === undefined || row[feature] === "");
@@ -62,9 +48,40 @@ export function correlation(rows, a, b) {
   const numerator = pairs.reduce((sum, pair) => sum + (pair[0] - ma) * (pair[1] - mb), 0), da = Math.sqrt(pairs.reduce((sum, pair) => sum + (pair[0] - ma) ** 2, 0)), db = Math.sqrt(pairs.reduce((sum, pair) => sum + (pair[1] - mb) ** 2, 0));
   return round(da && db ? numerator / (da * db) : 0);
 }
+export function spearmanCorrelation(rows, a, b) {
+  const pairs = rows.filter(row => Number.isFinite(Number(row[a])) && Number.isFinite(Number(row[b]))).map(row => [Number(row[a]), Number(row[b])]);
+  if (pairs.length < 2) return null;
+  const rankedA = ranks(pairs.map(pair => pair[0])), rankedB = ranks(pairs.map(pair => pair[1]));
+  const rankedRows = rankedA.map((value, index) => ({ a: value, b: rankedB[index] }));
+  return correlation(rankedRows, "a", "b");
+}
+function classProfileResult(rows, feature, corruptionLog) {
+  const classes = TRAFFIC_CLASSES.map(label => ({ label, ...summary(rows.filter(row => row.target === label), feature, corruptionLog) }));
+  const medians = classes.map(item => item.median).filter(Number.isFinite), values = numeric(rows.map(row => row[feature]));
+  const spread = medians.length ? Math.max(...medians) - Math.min(...medians) : 0, iqr = quantile(values, 0.75) - quantile(values, 0.25), separation = round(iqr > 0 ? spread / iqr : 0) ?? 0;
+  const highest = classes.reduce((best, item) => !best || (item.median ?? -Infinity) > (best.median ?? -Infinity) ? item : best, null), lowest = classes.reduce((best, item) => !best || (item.median ?? Infinity) < (best.median ?? Infinity) ? item : best, null), name = featureLabel(feature);
+  let level, explanation;
+  if (separation >= 1) { level = "clear"; explanation = `${name} changes a lot between the traffic classes. ${classLabel(highest.label)} usually has much higher typical readings than ${classLabel(lowest.label)}. This sensor can help tell one traffic situation from another.`; }
+  else if (separation >= 0.5) { level = "noticeable"; explanation = `${name} changes noticeably between some traffic classes. ${classLabel(highest.label)} tends to have higher typical readings than ${classLabel(lowest.label)}. This sensor may help distinguish some traffic situations.`; }
+  else if (separation >= 0.25) { level = "small"; explanation = `${name} shows some differences between the traffic classes, but the typical readings are not very far apart. It may add useful information, but it is unlikely to separate the classes by itself.`; }
+  else { level = "little"; explanation = `${name} stays fairly similar across the traffic classes. Because the typical readings barely change between situations, this sensor may not help much in telling the classes apart.`; }
+  return { kind: "classprofiles", feature, classes, evidence: { method: "median spread divided by overall IQR", separation, level }, explanation };
+}
+function correlationResult(rows, feature, secondFeature) {
+  const coefficient = spearmanCorrelation(rows, feature, secondFeature), pearson = correlation(rows, feature, secondFeature), magnitude = Math.abs(coefficient ?? 0), a = featureLabel(feature), b = featureLabel(secondFeature);
+  let strength, opening, movement, advice;
+  if (magnitude >= 0.7) { strength = "strong"; opening = `${a} and ${b} are strongly connected.`; advice = "Because their readings are closely linked, they may provide some repeated information. If you have only 10 slots, think about whether you need both."; }
+  else if (magnitude >= 0.45) { strength = "clear"; opening = `${a} and ${b} show a clear connection.`; advice = "Because their readings are related, they may provide some repeated information. If you have only 10 slots, think about whether both deserve a place."; }
+  else if (magnitude >= 0.25) { strength = "some"; opening = `${a} and ${b} show some connection.`; advice = "They may share some information, but each could still add something different. Check their Class Profiles before deciding whether both deserve a slot."; }
+  else { strength = "little"; opening = `${a} and ${b} show very little connection.`; advice = "They appear to provide different information, but check each sensor's Class Profile before deciding whether either deserves a slot."; }
+  if (magnitude < 0.25) movement = "Changes in one do not consistently match changes in the other.";
+  else if ((coefficient ?? 0) > 0) movement = `When ${a} increases, ${b} often tends to increase too.`;
+  else movement = `When ${a} increases, ${b} often tends to decrease.`;
+  return { kind: "correlation", feature, secondFeature, coefficient, pearson, evidence: { method: "Spearman rank correlation", strength, direction: magnitude < 0.25 ? "none" : coefficient > 0 ? "same" : "opposite" }, explanation: `${opening} ${movement} ${advice}` };
+}
 function analyze(type, rows, features, feature, secondFeature, corruptionLog) {
-  if (type === "classprofiles") return { kind: type, feature, explanation: CLASS_PROFILE_EXPLANATIONS[feature] || "This sensor shows some differences across the traffic classes. Compare the typical readings and decide whether it gives you a useful view of the traffic situation.", classes: TRAFFIC_CLASSES.map(label => ({ label, ...summary(rows.filter(row => row.target === label), feature, corruptionLog) })) };
-  if (type === "correlation") return { kind: type, features, matrix: features.map(a => features.map(b => correlation(rows, a, b))) };
+  if (type === "classprofiles") return classProfileResult(rows, feature, corruptionLog);
+  if (type === "correlation") return correlationResult(rows, feature, secondFeature);
   const coefficient = correlation(rows, feature, secondFeature), ordered = numeric(rows.map(row => row[feature])).sort((a, b) => a - b), bins = [];
   for (let i = 0; i < 5; i++) { const low = ordered[Math.floor((ordered.length - 1) * i / 5)], high = ordered[Math.floor((ordered.length - 1) * (i + 1) / 5)], values = numeric(rows.filter(row => Number(row[feature]) >= low && Number(row[feature]) <= high).map(row => row[secondFeature])); bins.push({ from: round(low), to: round(high), mean: round(mean(values)), count: values.length }); }
   return { kind: type, feature, secondFeature, coefficient, bins };

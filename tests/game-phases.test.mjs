@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { assignment, manualClass, MANUAL_CLASSES } from "../api/_event.js";
 import missionHandler from "../api/mission.js";
 import labelsHandler from "../api/labels.js";
-import analyzeHandler, { CLASS_PROFILE_EXPLANATIONS } from "../api/analyze.js";
+import analyzeHandler from "../api/analyze.js";
 import featuresHandler from "../api/features.js";
 import qualityHandler, { buildQualityPlan, scoreRepairPlan } from "../api/quality.js";
 import cameraHandler from "../api/camera.js";
@@ -79,7 +79,7 @@ test("Feature Hunt spends a signed 10-credit ledger and locks exactly ten channe
     assert.equal(blocked.statusCode, 400);
   const profiles = await invoke(analyzeHandler, { room, player, type: "classprofiles", feature: event.features[0] });
   assert.equal(profiles.body.creditsRemaining, 8);
-  const correlation = await invoke(analyzeHandler, { room, player, type: "correlation", analysisState: profiles.body.analysisState });
+  const correlation = await invoke(analyzeHandler, { room, player, type: "correlation", feature: event.features[0], secondFeature: event.features[1], analysisState: profiles.body.analysisState });
   assert.equal(correlation.body.creditsRemaining, 6);
   const completed = await invoke(featuresHandler, { room, player, features: event.features.slice(0, 9), analysisState: correlation.body.analysisState });
   assert.equal(completed.statusCode, 200);
@@ -98,9 +98,17 @@ test("Event 3 exposes only the three dynamic investigations and class profiles",
   assert.equal(profiles.body.result.kind, "classprofiles");
   assert.equal(profiles.body.result.classes.length, 5);
   assert.ok(Object.hasOwn(profiles.body.result.classes[0], "missingPct"));
-  assert.equal(profiles.body.result.explanation, CLASS_PROFILE_EXPLANATIONS[feature]);
+  assert.equal(profiles.body.result.evidence.method, "median spread divided by overall IQR");
   assert.match(profiles.body.result.explanation, /traffic|sensor|class/i);
-  assert.deepEqual(event.features.filter(name => !CLASS_PROFILE_EXPLANATIONS[name]), []);
+  const related = await invoke(analyzeHandler, { room: "350006", player: "correlation-team", type: "correlation", feature: "rain_intensity_mmhr", secondFeature: "road_wetness_pct" });
+  assert.equal(related.statusCode, 200);
+  assert.equal(related.body.result.evidence.method, "Spearman rank correlation");
+  assert.equal(related.body.result.evidence.strength, "strong");
+  assert.ok(related.body.result.coefficient > 0.7);
+  assert.match(related.body.result.explanation, /strongly connected/i);
+  const unrelated = await invoke(analyzeHandler, { room: "350007", player: "correlation-team-2", type: "correlation", feature: "vehicle_count", secondFeature: "rain_intensity_mmhr" });
+  assert.equal(unrelated.body.result.evidence.strength, "little");
+  assert.match(unrelated.body.result.explanation, /very little connection/i);
   const removed = await invoke(analyzeHandler, { room: "350005", player: "profiles-team", type: "stats", feature });
   assert.equal(removed.statusCode, 400);
 });
@@ -108,7 +116,7 @@ test("Event 3 exposes only the three dynamic investigations and class profiles",
 test("Feature Hunt scores strong channels at 2 points, moderate at 1, and weak at 0 out of 20", async () => {
   const room = "300010", player = "score-team", event = assignment(room);
   const profiles = await invoke(analyzeHandler, { room, player, type: "classprofiles", feature: event.features[0] });
-  const correlation = await invoke(analyzeHandler, { room, player, type: "correlation", analysisState: profiles.body.analysisState });
+  const correlation = await invoke(analyzeHandler, { room, player, type: "correlation", feature: event.features[0], secondFeature: event.features[1], analysisState: profiles.body.analysisState });
   const selected = [...event.features].slice(0, 10);
   const result = await invoke(featuresHandler, { room, player, features: selected, analysisState: correlation.body.analysisState });
   const total = selected.reduce((sum, feature) => {
