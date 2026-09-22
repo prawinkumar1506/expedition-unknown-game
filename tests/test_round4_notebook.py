@@ -49,7 +49,7 @@ console.log(JSON.stringify({codes, features}));
         for model, code in self.generated["codes"].items():
             with self.subTest(model=model):
                 # Load the actual export's data handling, repairs, classifier and typed ranges.
-                namespace, _ = self.run_in_dataset(code.split("\ngrid = list(ParameterGrid(PARAMETERS))")[0])
+                namespace, _ = self.run_in_dataset(code.split("\nparameter_grid = list(ParameterGrid(PARAMETERS))")[0])
                 X, _, y, _ = namespace["train_test_split"](namespace["X"], namespace["y"], train_size=300, stratify=namespace["y"], random_state=42)
                 with namespace["threadpool_limits"](limits=1):
                     for endpoint in [0, -1]:
@@ -65,7 +65,7 @@ console.log(JSON.stringify({codes, features}));
         code = code.replace("TARGET_SECONDS = 1050", "TARGET_SECONDS = 0.01")
         namespace, directory = self.run_in_dataset(code)
         pd = namespace["pd"]
-        submission = pd.read_csv(directory / "submission.csv")
+        submission = pd.read_csv(directory / "submission_random_forest.csv")
         self.assertEqual(list(submission.columns), ["event_id", "prediction"])
         self.assertEqual(len(submission), 500)
         self.assertEqual(submission["event_id"].tolist(), namespace["test_df"]["event_id"].tolist())
@@ -79,7 +79,7 @@ console.log(JSON.stringify({codes, features}));
             self.assertEqual(hashlib.sha256((directory / name).read_bytes()).digest(), hashlib.sha256((ROOT / "data" / "traffic" / name).read_bytes()).digest())
 
     def test_repairs_are_fold_local_and_median_only_replaces_outliers(self):
-        namespace, _ = self.run_in_dataset(self.generated["codes"]["Random Forest"].split("\ngrid = list(ParameterGrid(PARAMETERS))")[0])
+        namespace, _ = self.run_in_dataset(self.generated["codes"]["Random Forest"].split("\nparameter_grid = list(ParameterGrid(PARAMETERS))")[0])
         pd, np = namespace["pd"], namespace["np"]
         first, second = namespace["FEATURES"][:2]
         frame = pd.DataFrame({name: [10.0] * 20 for name in namespace["FEATURES"]})

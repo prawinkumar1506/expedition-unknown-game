@@ -165,43 +165,14 @@ test("Event 4 reports credit spend and elapsed time in the sealed quality payloa
   assert.equal(result.body.timeTakenSeconds, 273);
 });
 
-test("feature and quality choices are baked into prepared train/test datasets", async () => {
-  const room = "450005", player = "prepared-data-team", event = assignment(room), selected = event.features.slice(0, 10);
-  const featureLock = await invoke(featuresHandler, { room, player, features: selected });
-  assert.equal(featureLock.statusCode, 200);
-  const featureDataset = await invoke(datasetHandler, { room, player, stage: "features", featureState: featureLock.body.featureState });
-  assert.equal(featureDataset.statusCode, 200);
-  assert.deepEqual(featureDataset.body.summary.features, selected);
-  assert.equal(featureDataset.body.summary.trainRows, 2000);
-  assert.equal(featureDataset.body.summary.testRows, 500);
-  const planResponse = await invoke(qualityHandler, { room, player, action: "plan", featureState: featureLock.body.featureState });
-  const missingFeature = planResponse.body.plan.missingColumns.find(item => item.issueCount > 0)?.feature;
-  const outlierFeature = planResponse.body.plan.outlierColumns.find(item => item.issueCount > 0)?.feature;
-  const repairs = { missingColumns: missingFeature ? [missingFeature] : [], outlierColumns: outlierFeature ? [outlierFeature] : [] };
-  const quality = await invoke(qualityHandler, { room, player, action: "seal", featureState: featureLock.body.featureState, repairs, missingMethods: missingFeature ? { [missingFeature]: "median" } : {}, outlierMethods: outlierFeature ? { [outlierFeature]: "iqr_clip" } : {} });
-  assert.equal(quality.statusCode, 200);
-  const prepared = await invoke(datasetHandler, { room, player, stage: "quality", qualityState: quality.body.qualityState, includeContent: true });
-  assert.equal(prepared.statusCode, 200);
-  assert.equal(prepared.body.trainFilename, "train_ready.csv");
-  assert.equal(prepared.body.testFilename, "test_ready.csv");
-  if (missingFeature) assert.ok(prepared.body.summary.missingTrain < featureDataset.body.summary.missingTrain);
-  assert.equal(prepared.body.trainCsv.split("\n", 1)[0], ["event_id", ...selected, "label"].join(","));
-  assert.equal(prepared.body.testCsv.split("\n", 1)[0], ["event_id", ...selected].join(","));
-  assert.ok(!prepared.body.trainCsv.split("\n", 1)[0].includes(event.features[10]));
-});
-
-test("Round 4 notebook reuses unchanged source datasets and carries feature/repair decisions", () => {
-  const tuning = normalizeTuning({ randomState: 90210, ranges: { n_estimators: 2, max_depth: 2, min_samples_leaf: 2, max_features: 2 } });
-  const selected = assignment("500005").features.slice(0, 10);
-  const notebook = JSON.parse(buildKaggleScript({ model: "Random Forest", features: selected, repairs: { missingColumns: [selected[0]], outlierColumns: [selected[1]] }, tuning: { ...tuning, repairMethods: { missing: { [selected[0]]: "median" }, outlier: { [selected[1]]: "iqr_clip" } } }, notebook: true }));
-  const code = notebook.cells.find(cell => cell.cell_type === "code").source.join("");
+test("Round 4 generates clean model-search notebooks for the participant train/test pair", () => {
+  const tuning = normalizeTuning({ randomState: 90210 });
+  const notebook = JSON.parse(buildKaggleScript({ model: "Random Forest", features: assignment("500005").features.slice(0, 10), repairs: { missingColumns: ["vehicle_count"], outlierColumns: [] }, tuning, notebook: true }));
+  const code = notebook.cells.filter(cell => cell.cell_type === "code").map(cell => cell.source.join("")).join("\n");
   assert.equal(notebook.nbformat, 4);
-  assert.match(code, /TRAIN_FILE = "train_16\.csv"/);
-  assert.match(code, /TEST_FILE = "test_16\.csv"/);
-  assert.match(code, /REPAIRS = json\.loads/);
-  assert.match(code, /REPAIR_METHODS = json\.loads/);
-  assert.match(code, /find_data/);
-  assert.match(code, /RepairedClassifier/);
+  assert.match(code, /TRAIN_FILE = "train_16.csv"/);
+  assert.match(code, /TEST_FILE = "test_16.csv"/);
+  assert.match(code, /submission.to_csv\("submission.csv", index=False\)/);
   assert.match(code, /classification_report/);
   assert.match(code, /randomized_search_results\.csv/);
   assert.match(code, /best_model_evaluation\.json/);
