@@ -31,7 +31,7 @@
 .protocol-grid small { display: block; }
 .protocol-grid span { color: var(--warning); font: 600 9px "JetBrains Mono", monospace; letter-spacing: .12em; }
 .protocol-grid b { margin-top: 9px; color: var(--t-base); font: 700 15px "Inter Tight", Inter, sans-serif; }
-.protocol-grid small { margin-top: 7px; color: var(--t-muted); font: 500 10px/1.55 "JetBrains Mono", monospace; }
+.protocol-grid small { margin-top: 7px; color: var(--t-muted); font: 500 10px/1.55 "JetBrains Mono", monospace; white-space: pre-line; }
 
 .manual-table { min-width: 1060px; }
 .manual-table select {

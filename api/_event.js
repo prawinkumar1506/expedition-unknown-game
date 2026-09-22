@@ -75,9 +75,14 @@ function loadData() {
 }
 
 export function manualClass(row) {
-  if (Number(row.incident_distance_m) < 50) return "Accident";
-  if (Number(row.vehicle_count) >= 25 && Number(row.avg_vehicle_speed_kmph) < 25) return "Heavy_Traffic";
-  if (Number(row.pedestrian_count) >= 10) return "Pedestrian_Crossing";
+  const incidentDistance = Number(row.incident_distance_m);
+  const avgSpeed = Number(row.avg_vehicle_speed_kmph);
+  const vehicleCount = Number(row.vehicle_count);
+  const roadOccupancy = Number(row.road_occupancy_pct);
+  const pedestrianCount = Number(row.pedestrian_count);
+  if ((incidentDistance < 50 && avgSpeed < 30) || (incidentDistance < 100 && avgSpeed < 10)) return "Accident";
+  if ((vehicleCount >= 25 && avgSpeed < 25) || (roadOccupancy >= 70 && avgSpeed < 20)) return "Heavy_Traffic";
+  if (pedestrianCount >= 10 || (pedestrianCount >= 6 && vehicleCount < 15)) return "Pedestrian_Crossing";
   return "Normal_Traffic";
 }
 
@@ -85,7 +90,6 @@ export function assignment(room = "fixed") {
   const data = loadData();
   const participantRows = readCsv("quickread_participant.csv");
   const answerKeyRows = readCsv("quickread_answer_key.csv");
-  const answerKeyMap = new Map(answerKeyRows.map(row => [row.record_id, row]));
   const manualRows = participantRows.slice(0, 50).map(row => ({
     manual_id: row.record_id,
     vehicle_count: row.vehicle_count,
@@ -93,7 +97,7 @@ export function assignment(room = "fixed") {
     road_occupancy_pct: row.road_occupancy_pct,
     pedestrian_count: row.pedestrian_count,
     incident_distance_m: row.incident_distance_m,
-    correct_answer: answerKeyMap.get(row.record_id)?.correct_answer || null
+    correct_answer: manualClass(row)
   }));
   return { room, ...data, quickreadAnswerKey: answerKeyRows, manualRows };
 }

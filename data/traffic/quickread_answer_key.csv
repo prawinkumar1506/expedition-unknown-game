@@ -11,7 +11,7 @@ QR_009,21,45.3,28.8,10,92.3,Pedestrian_Crossing
 QR_010,7,50.8,40.4,3,166.7,Normal_Traffic
 QR_011,28,47.6,22.0,4,394.0,Normal_Traffic
 QR_012,42,26.9,74.0,8,172.8,Normal_Traffic
-QR_013,6,33.9,38.5,13,43.6,Accident
+QR_013,6,33.9,38.5,13,43.6,Pedestrian_Crossing
 QR_014,29,23.0,50.7,11,174.1,Heavy_Traffic
 QR_015,26,24.0,36.1,17,112.7,Heavy_Traffic
 QR_016,36,9.0,30.9,5,40.8,Accident
@@ -20,14 +20,14 @@ QR_018,26,26.5,58.6,3,268.2,Normal_Traffic
 QR_019,31,22.2,63.3,19,50.0,Heavy_Traffic
 QR_020,12,36.6,58.7,23,93.1,Pedestrian_Crossing
 QR_021,17,60.5,36.8,5,132.1,Normal_Traffic
-QR_022,12,0.0,38.2,9,140.0,Normal_Traffic
+QR_022,12,0.0,38.2,9,140.0,Pedestrian_Crossing
 QR_023,8,35.7,63.5,33,117.1,Pedestrian_Crossing
 QR_024,23,11.5,66.2,2,3.5,Accident
-QR_025,19,45.5,35.6,3,46.5,Accident
+QR_025,19,45.5,35.6,3,46.5,Normal_Traffic
 QR_026,33,17.9,68.7,10,8.1,Accident
 QR_027,14,52.3,13.0,4,263.9,Normal_Traffic
 QR_028,13,36.9,78.2,12,104.5,Pedestrian_Crossing
-QR_029,11,15.2,75.5,3,114.0,Normal_Traffic
+QR_029,11,15.2,75.5,3,114.0,Heavy_Traffic
 QR_030,28,6.7,67.5,2,24.3,Accident
 QR_031,29,23.6,38.2,2,72.3,Heavy_Traffic
 QR_032,27,42.4,20.7,16,95.9,Pedestrian_Crossing
@@ -35,7 +35,7 @@ QR_033,21,22.2,58.4,3,20.8,Accident
 QR_034,23,19.0,54.3,4,61.8,Normal_Traffic
 QR_035,29,20.6,48.1,12,299.4,Heavy_Traffic
 QR_036,20,45.6,39.5,4,141.3,Normal_Traffic
-QR_037,10,10.2,55.9,6,259.4,Normal_Traffic
+QR_037,10,10.2,55.9,6,259.4,Pedestrian_Crossing
 QR_038,28,18.1,32.3,5,41.6,Accident
 QR_039,22,25.6,45.9,4,412.0,Normal_Traffic
 QR_040,19,28.8,38.2,8,438.9,Normal_Traffic
@@ -45,7 +45,7 @@ QR_043,22,51.4,26.4,3,113.0,Normal_Traffic
 QR_044,14,37.4,16.9,2,91.4,Normal_Traffic
 QR_045,20,25.6,38.8,5,15.4,Accident
 QR_046,11,43.1,24.4,3,389.7,Normal_Traffic
-QR_047,12,22.4,52.9,7,263.3,Normal_Traffic
+QR_047,12,22.4,52.9,7,263.3,Pedestrian_Crossing
 QR_048,28,24.7,38.6,1,46.8,Accident
 QR_049,30,20.2,37.6,3,18.3,Accident
-QR_050,36,38.4,46.6,1,49.0,Accident
+QR_050,36,38.4,46.6,1,49.0,Normal_Traffic

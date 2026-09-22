@@ -25,10 +25,10 @@ export default function handler(req, res) {
     manualRows: event.manualRows,
     manualClasses: MANUAL_CLASSES,
     manualRules: [
-      { priority: 1, label: "Accident", test: "incident_distance_m < 50" },
-      { priority: 2, label: "Heavy_Traffic", test: "vehicle_count ≥ 25 AND avg_vehicle_speed_kmph < 25" },
-      { priority: 3, label: "Pedestrian_Crossing", test: "pedestrian_count ≥ 10" },
-      { priority: 4, label: "Normal_Traffic", test: "fallback when no earlier rule fires" }
+      { priority: 1, label: "Accident", test: "incident_distance_m < 50 AND avg_vehicle_speed_kmph < 30\nOR\nincident_distance_m < 100 AND avg_vehicle_speed_kmph < 10" },
+      { priority: 2, label: "Heavy_Traffic", test: "vehicle_count ≥ 25 AND avg_vehicle_speed_kmph < 25\nOR\nroad_occupancy_pct ≥ 70 AND avg_vehicle_speed_kmph < 20" },
+      { priority: 3, label: "Pedestrian_Crossing", test: "pedestrian_count ≥ 10\nOR\npedestrian_count ≥ 6 AND vehicle_count < 15" },
+      { priority: 4, label: "Normal_Traffic", test: "Fallback — applies only if none of Rules 1–3 fired." }
     ],
     features: event.features,
     featureMeta,

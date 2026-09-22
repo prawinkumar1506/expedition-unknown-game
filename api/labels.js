@@ -7,13 +7,12 @@ export default function handler(req, res) {
   const room = clean(req.body?.room, 16), player = clean(req.body?.player, 20), submitted = req.body?.labels || {};
   if (!room || !player) return json(res, 400, { error: "Room and player are required" });
   const event = assignment(room), expectedIds = new Set(event.manualRows.map(row => row.manual_id));
-  const answerKey = new Map((event.quickreadAnswerKey || []).map(row => [row.record_id, row.correct_answer]));
   if (Object.keys(submitted).some(id => !expectedIds.has(id) || (submitted[id] && !MANUAL_CLASSES.includes(submitted[id])))) {
     return json(res, 400, { error: "The manual ledger contains an invalid row or class." });
   }
   let correct = 0, wrong = 0, blank = 0;
   for (const row of event.manualRows) {
-    const answer = submitted[row.manual_id] || "", truth = answerKey.get(row.manual_id) || "";
+    const answer = submitted[row.manual_id] || "", truth = manualClass(row);
     if (!answer) blank++;
     else if (answer === truth) correct++;
     else wrong++;

@@ -30,6 +30,7 @@ const routes = {
   labels: (await import("./api/labels.js")).default,
   analyze: (await import("./api/analyze.js")).default,
   features: (await import("./api/features.js")).default,
+  dataset: (await import("./api/dataset.js")).default,
   quality: (await import("./api/quality.js")).default,
   health: (await import("./api/health.js")).default,
   camera: (await import("./api/camera.js")).default,

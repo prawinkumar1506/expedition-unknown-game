@@ -1,3 +1,5 @@
+import { materializeDerivedRows } from "./_derived.js";
+
 const numeric = values => values.filter(value => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value))).map(Number);
 const missing = value => value === null || value === undefined || value === "" || (typeof value === "number" && Number.isNaN(value));
 const median = values => { const ordered = numeric(values).sort((a, b) => a - b), n = ordered.length; return n ? (n % 2 ? ordered[(n - 1) / 2] : (ordered[n / 2 - 1] + ordered[n / 2]) / 2) : null; };
@@ -72,4 +74,3 @@ export function prepareDatasets({ trainRows, testRows, features, derivedFeatures
     summary: { features: [...features], trainRows: train.length, testRows: test.length, missingTrain, missingTest }
   };
 }
-import { materializeDerivedRows } from "./_derived.js";

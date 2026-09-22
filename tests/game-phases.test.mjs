@@ -63,10 +63,13 @@ test("Manual Override uses QuickRead answer keys and scores only correct answers
   const room = "200002", player = "paper-team", event = assignment(room); 
   assert.ok(event.manualRows.length > 0); assert.ok(event.manualRows.every(row => row.manual_id.startsWith("QR_")));
   assert.equal(event.quickreadAnswerKey.length, event.manualRows.length);
-  assert.equal(manualClass({ incident_distance_m: 49.9, vehicle_count: 70, avg_vehicle_speed_kmph: 2, pedestrian_count: 30 }), "Accident");
-  assert.equal(manualClass({ incident_distance_m: 50, vehicle_count: 25, avg_vehicle_speed_kmph: 24.9, pedestrian_count: 30 }), "Heavy_Traffic");
-  assert.equal(manualClass({ incident_distance_m: 50, vehicle_count: 24, avg_vehicle_speed_kmph: 10, pedestrian_count: 10 }), "Pedestrian_Crossing");
-  assert.equal(manualClass({ incident_distance_m: 50, vehicle_count: 24, avg_vehicle_speed_kmph: 10, pedestrian_count: 9 }), "Normal_Traffic");
+  assert.deepEqual(event.quickreadAnswerKey.map(row => row.correct_answer), event.manualRows.map(row => manualClass(row)));
+  assert.equal(manualClass({ incident_distance_m: 49.9, avg_vehicle_speed_kmph: 29.9, vehicle_count: 70, road_occupancy_pct: 0, pedestrian_count: 30 }), "Accident");
+  assert.equal(manualClass({ incident_distance_m: 99.9, avg_vehicle_speed_kmph: 9.9, vehicle_count: 0, road_occupancy_pct: 0, pedestrian_count: 0 }), "Accident");
+  assert.equal(manualClass({ incident_distance_m: 100, avg_vehicle_speed_kmph: 19.9, vehicle_count: 24, road_occupancy_pct: 70, pedestrian_count: 0 }), "Heavy_Traffic");
+  assert.equal(manualClass({ incident_distance_m: 100, avg_vehicle_speed_kmph: 24.9, vehicle_count: 25, road_occupancy_pct: 0, pedestrian_count: 30 }), "Heavy_Traffic");
+  assert.equal(manualClass({ incident_distance_m: 100, avg_vehicle_speed_kmph: 50, vehicle_count: 14, road_occupancy_pct: 0, pedestrian_count: 6 }), "Pedestrian_Crossing");
+  assert.equal(manualClass({ incident_distance_m: 100, avg_vehicle_speed_kmph: 50, vehicle_count: 15, road_occupancy_pct: 0, pedestrian_count: 9 }), "Normal_Traffic");
   const labels = {};
   event.manualRows.slice(0, 10).forEach(row => labels[row.manual_id] = row.correct_answer || manualClass(row));
   event.manualRows.slice(10, 15).forEach(row => labels[row.manual_id] = MANUAL_CLASSES.find(label => label !== (row.correct_answer || manualClass(row))));
@@ -226,13 +229,16 @@ test("feature and quality choices are baked into prepared train/test datasets", 
   assert.ok(!prepared.body.trainCsv.split("\n", 1)[0].includes(event.features[10]));
 });
 
-test("Event 5 notebook consumes prepared datasets and does not repeat feature filtering or repairs", () => {
+test("Event 5 notebook reuses unchanged source datasets and carries feature/repair decisions", () => {
   const tuning = normalizeTuning({ trials: 27, folds: 5, randomState: 90210 });
-  const notebook = buildKaggleScript({ model: "Random Forest", features: assignment("500005").features.slice(0, 10), trainFile: "train_ready.csv", testFile: "test_ready.csv", tuning, notebook: true });
+  const selected = assignment("500005").features.slice(0, 10);
+  const notebook = buildKaggleScript({ model: "Random Forest", features: selected, trainFile: "train_16.csv", testFile: "test_16.csv", repairs: { missingColumns: [selected[0]], outlierColumns: [selected[1]] }, repairMethods: { missing: { [selected[0]]: "median" }, outlier: { [selected[1]]: "iqr_clip" } }, tuning, notebook: true });
   assert.match(notebook, /"cells"/); assert.match(notebook, /"nbformat"/); assert.match(notebook, /submission\.csv/); assert.match(notebook, /submission\.to_csv\(.*submission\.csv.*index=False/i); assert.match(notebook, /classification_report/);
-  assert.match(notebook, /train_ready\.csv/); assert.match(notebook, /test_ready\.csv/);
-  assert.match(notebook, /drop\(columns=\['event_id', 'label'\]\)/);
-  assert.doesNotMatch(notebook, /SimpleImputer|fillna|iqr_clip|median_replace|SELECTED_REPAIRS|REPAIR_METHODS/);
+  assert.match(notebook, /train_16\.csv/); assert.match(notebook, /test_16\.csv/);
+  assert.match(notebook, /SELECTED_REPAIRS/); assert.match(notebook, /REPAIR_METHODS/);
+  assert.match(notebook, /fillna/); assert.match(notebook, /iqr_clip/);
+  assert.match(notebook, /Projected source data to the 10 locked features/);
+  assert.match(notebook, /unchanged source files/i);
   assert.match(notebook, /verbose=2/);
   assert.match(notebook, /TRAIN\/TUNE START/);
   assert.match(notebook, /training fits/);
@@ -244,8 +250,8 @@ test("Event 5 notebook consumes prepared datasets and does not repeat feature fi
   assert.match(notebook, /PREDICT TEST/);
   assert.match(notebook, /WRITE OUTPUT/);
   assert.match(notebook, /Entire run finished/);
-  const backup = buildKaggleScript({ model: "Support Vector Machine", features: assignment("500005").backupFeatures, notebook: true });
-  assert.match(backup, /train_ready\.csv/); assert.match(backup, /test_ready\.csv/); assert.match(backup, /SVC\(kernel=/);
+  const backup = buildKaggleScript({ model: "Support Vector Machine", features: assignment("500005").backupFeatures, trainFile: "train_backup_10.csv", testFile: "test_backup_10.csv", notebook: true });
+  assert.match(backup, /train_backup_10\.csv/); assert.match(backup, /test_backup_10\.csv/); assert.match(backup, /SVC\(kernel=/);
   assert.equal(kaggleFilename("Decision Tree", "ipynb"), "decision-tree-randomized-search.ipynb");
 });
 

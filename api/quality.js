@@ -106,12 +106,14 @@ export default function handler(req, res) {
     const emergencyFeed = Boolean(req.body?.emergencyFeed);
     if (emergencyFeed) {
       if (featureState.strongCount > EMERGENCY_MAX_STRONG_CHANNELS) throw new Error(`Emergency Feed is available only after a failed Feature Hunt lock (${EMERGENCY_MAX_STRONG_CHANNELS} or fewer strong channels).`);
-      const qualityState = packState("quality", { room, player, features: event.backupFeatures, derivedFeatures: [], featureScore: 0, qualityScore: EMERGENCY_QUALITY_SCORE, emergencyFeed: true, repairs: { missingColumns: [], outlierColumns: [] }, methods: { missing: {}, outlier: {} }, repairSpend: EMERGENCY_REPAIR_COST, timeTakenSeconds });
-      return json(res, 200, { sealed: true, emergencyFeed: true, features: event.backupFeatures, featureScore: 0, qualityScore: EMERGENCY_QUALITY_SCORE, repairSpend: EMERGENCY_REPAIR_COST, repairBudget: BUDGET, timeTakenSeconds, qualityState, message: `Emergency Telemetry Feed locked. ${EMERGENCY_REPAIR_COST} repair credits were charged; Event 3 is forfeited and Event 4 is capped at 35/100.` });
+      const repairs = { missingColumns: [], outlierColumns: [] }, methods = { missing: {}, outlier: {} }, derivedFeatures = [];
+      const qualityState = packState("quality", { room, player, features: event.backupFeatures, derivedFeatures, featureScore: 0, qualityScore: EMERGENCY_QUALITY_SCORE, emergencyFeed: true, repairs, methods, repairSpend: EMERGENCY_REPAIR_COST, timeTakenSeconds });
+      return json(res, 200, { sealed: true, emergencyFeed: true, features: event.backupFeatures, derivedFeatures, repairs, methods, sourceFiles: { train: "train_backup_10.csv", test: "test_backup_10.csv" }, featureScore: 0, qualityScore: EMERGENCY_QUALITY_SCORE, repairSpend: EMERGENCY_REPAIR_COST, repairBudget: BUDGET, timeTakenSeconds, qualityState, message: `Emergency Telemetry Feed locked. ${EMERGENCY_REPAIR_COST} repair credits were charged; Event 3 is forfeited and Event 4 is capped at 35/100.` });
     }
     const { repairs, methods, spend } = validateRepairs(plan, req.body?.repairs), qualityScore = scoreRepairPlan(plan, repairs);
-    const qualityState = packState("quality", { room, player, features: featureState.selected, derivedFeatures: featureState.derivedFeatures || [], featureScore: featureState.score, qualityScore, emergencyFeed: false, repairs, methods, repairSpend: spend, timeTakenSeconds });
-    return json(res, 200, { sealed: true, emergencyFeed: false, features: featureState.selected, featureScore: featureState.score, qualityScore, repairSpend: spend, repairBudget: BUDGET, methods, timeTakenSeconds, qualityState, message: `Cleaning plan sealed: ${spend}/${BUDGET} repair credits spent, repair effectiveness ${qualityScore}/100.` });
+    const derivedFeatures = featureState.derivedFeatures || [];
+    const qualityState = packState("quality", { room, player, features: featureState.selected, derivedFeatures, featureScore: featureState.score, qualityScore, emergencyFeed: false, repairs, methods, repairSpend: spend, timeTakenSeconds });
+    return json(res, 200, { sealed: true, emergencyFeed: false, features: featureState.selected, derivedFeatures, repairs, sourceFiles: { train: "train_16.csv", test: "test_16.csv" }, featureScore: featureState.score, qualityScore, repairSpend: spend, repairBudget: BUDGET, methods, timeTakenSeconds, qualityState, message: `Cleaning plan sealed: ${spend}/${BUDGET} repair credits spent, repair effectiveness ${qualityScore}/100.` });
   } catch (error) {
     const message = ["STATE_REQUIRED", "INVALID_STATE"].includes(error.message) ? "The Feature Hunt seal could not be verified. Reload the mission." : error.message;
     return json(res, 409, { error: message });
