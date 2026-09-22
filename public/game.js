@@ -372,7 +372,7 @@ function renderEvent1() {
         <div class="panel-title">Available recovery fragments <span>${event1Selections.length}/3 selected</span></div>
         <div class="pick-grid">${archiveCandidates.map(name => `<button class="pick feature ${event1Selections.includes(name) ? "chosen" : ""}" data-event1-choice="${name}" type="button" ${event1Result ? "disabled" : ""}><b>${event1Selections.includes(name) ? "✓" : "+"}</b><span class="pick-text"><strong class="pick-name">${esc(name)}</strong><small>recovery fragment</small></span></button>`).join("")}</div>
       </div>
-      <div class="analysis-status">${esc(event1Status || "Choose the three fragments that belong to the final JTU-7 gen3 bundle. No upload box is required; the archive is already staged in the project folder and it must be reconstructed from the valid names alone.")}</div>
+      ${event1Result ? "" : `<div class="analysis-status">${esc(event1Status || "Choose the three fragments that belong to the final JTU-7 gen3 bundle. No upload box is required; the archive is already staged in the project folder and it must be reconstructed from the valid names alone.")}</div>`}
       <div class="stage-actions">${event1Result ? `<span class="recovery-message success">Archive ${event1Result.passed ? "completed" : "failed"}. This round is locked${stageIsUnlocked("manual") ? "." : "; waiting for the host to open Event 2."}</span>${stageIsUnlocked("manual") ? `<button class="btn btn--primary" data-next="manual">Open Event 2</button>` : ""}` : `<button id="event1-submit" class="btn btn--primary" ${event1Selections.length !== 3 ? "disabled" : ""}>Submit archive</button>`}</div>
     </section>`;
 }
