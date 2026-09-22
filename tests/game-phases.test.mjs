@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { assignment, manualClass, MANUAL_CLASSES } from "../api/_event.js";
 import missionHandler from "../api/mission.js";
 import labelsHandler from "../api/labels.js";
-import analyzeHandler from "../api/analyze.js";
+import analyzeHandler, { CLASS_PROFILE_EXPLANATIONS } from "../api/analyze.js";
 import featuresHandler from "../api/features.js";
 import qualityHandler, { buildQualityPlan, scoreRepairPlan } from "../api/quality.js";
 import cameraHandler from "../api/camera.js";
@@ -98,6 +98,9 @@ test("Event 3 exposes only the three dynamic investigations and class profiles",
   assert.equal(profiles.body.result.kind, "classprofiles");
   assert.equal(profiles.body.result.classes.length, 5);
   assert.ok(Object.hasOwn(profiles.body.result.classes[0], "missingPct"));
+  assert.equal(profiles.body.result.explanation, CLASS_PROFILE_EXPLANATIONS[feature]);
+  assert.match(profiles.body.result.explanation, /traffic|sensor|class/i);
+  assert.deepEqual(event.features.filter(name => !CLASS_PROFILE_EXPLANATIONS[name]), []);
   const removed = await invoke(analyzeHandler, { room: "350005", player: "profiles-team", type: "stats", feature });
   assert.equal(removed.statusCode, 400);
 });
