@@ -1,6 +1,6 @@
 # Signal Lost: Operation Clearway
 
-An interface-driven multiplayer data-science game for **Events 2–5** of Operation Clearway. A host opens a room, teams join, and every decision carries into a final 500-row traffic forecast.
+An interface-driven multiplayer data-science game for Operation Clearway. A host opens a room, teams join, and every decision carries through Archive Reconstruction, Manual Override, Feature Hunt, and the final Repair + Model Handoff.
 
 The UI is adapted from **Adminator 4.3.0**, an MIT-licensed dashboard template. Vendored assets and the upstream license live in `public/vendor/adminator/`.
 
@@ -12,35 +12,27 @@ For the full module map, request/response responsibilities, state flow, Kaggle e
 
 Teams classify 50 tabular junction readings using the ordered paper protocol from `QuickRead_Briefing.pdf`:
 
-1. `incident_distance_m < 50` → `Accident`
-2. otherwise, `vehicle_count >= 25` and `avg_vehicle_speed_kmph < 25` → `Heavy_Traffic`
-3. otherwise, `pedestrian_count >= 10` → `Pedestrian_Crossing`
+1. (`incident_distance_m < 50` and `avg_vehicle_speed_kmph < 30`) **or** (`incident_distance_m < 100` and `avg_vehicle_speed_kmph < 10`) → `Accident`
+2. otherwise, (`vehicle_count >= 25` and `avg_vehicle_speed_kmph < 25`) **or** (`road_occupancy_pct >= 70` and `avg_vehicle_speed_kmph < 20`) → `Heavy_Traffic`
+3. otherwise, `pedestrian_count >= 10` **or** (`pedestrian_count >= 6` and `vehicle_count < 15`) → `Pedestrian_Crossing`
 4. otherwise → `Normal_Traffic`
 
-The first matching rule wins. Scoring is +1 correct, −1 wrong, and 0 blank. Event 2 uses numbers only—there are no images.
+The first matching rule wins. Scoring is +1 correct and 0 for wrong or blank answers. Event 2 uses numbers only—there are no images.
 
 ### Event 3 — Feature Hunt
 
-The supplied damaged training archive exposes 16 telemetry channels. Teams spend from a signed 10-credit investigation ledger, then lock exactly 10 channels. Available investigations are deliberately diagnostic rather than answer-revealing: basic statistics, missing-value analysis, class-wise distributions, correlations, and pair relationships.
+The supplied damaged training archive exposes 21 telemetry channels. Teams spend from a signed 10-credit investigation ledger, then lock exactly 10 channels. The two investigations are Class Profiles and pairwise Correlation Analysis; answer-revealing feature importance and derived features are intentionally absent.
 
-### Event 4 — Data Quality Lab
+### Event 4 — Repair + Model Handoff
 
-Teams spend at most 15 repair credits within their locked feature set:
+Round 4 is a 90-minute final lab; completion opens after 60 minutes. It uses two cumulative wallets:
 
-- Missing values: 3 credits per column, maximum 3 columns
-- Outliers: 3 credits per column, maximum 2 columns
-- Suspicious labels: 1 credit per record, maximum 6 records
-- Duplicate removal: 2 credits per group, maximum 4 groups
+- Repair wallet: 50 credits. Missing-value or outlier treatment costs 3 credits per selected column/operation.
+- Search wallet: 150 credits. Wider model-search ranges cost more credits and target longer real CV runtimes.
 
-The server applies the selected repairs to the supplied damaged archive and seals a scored repair plan.
+The original `train_16.csv` and `test_16.csv` remain unchanged. Each generated notebook carries the team's locked features, current repair plan, repair methods, model, search ranges, and random seed. Repair statistics are learned inside training folds so validation data is not used to choose imputation or outlier thresholds.
 
-After Event 3, only teams that locked **four or fewer strong channels** can choose the Emergency Telemetry Feed. It irreversibly swaps both train and test to the supplied clean 10-channel backup pair, forfeits all Event 3 points, limits Event 4 to 35/100, and caps the final-model component at 70/100. The fixed 6-strong + 4-weak mix is a breakout route for a failed feature lock, not a route to a winning score: even perfect Event 2 and evaluation-efficiency results can produce at most 58/100 overall.
-
-### Event 5 — Kaggle Forecast Handoff
-
-Teams select Decision Tree, Logistic Regression, K-Nearest Neighbors, Random Forest, or Support Vector Machine, then provide a random-search trial count, stratified-CV fold count, and random seed. The app generates a model-specific Kaggle Python cell rather than training inside Vercel.
-
-The cell reproduces the sealed feature and repair decisions, builds a real scikit-learn `Pipeline` (`SimpleImputer` → `StandardScaler` → selected classifier), tunes its model-specific distributions with `RandomizedSearchCV` using Macro F1, refits the best configuration, and then evaluates that selected estimator with a second cross-validation. That final figure is clearly marked as post-tuning; use nested CV if an unbiased selection estimate is required.
+Teams can explore ten approved models—five ensemble and five regular estimators. The generated notebook performs real timed cross-validation work, records the search results, evaluates the selected configuration on a held-out split, refits on all training data, and predicts the 500-row test set.
 
 After running in Kaggle, the cell writes direct notebook download links for:
 
@@ -56,12 +48,10 @@ Upload the supplied traffic CSV files as a Kaggle Dataset before running the cel
 
 `data/traffic/` contains the package files used by the server:
 
-- `train_16.csv`: 2,000 delivered rows, 16 features, deliberately damaged
-- `train_clean_16.csv`: organizer-side 2,000-row canonical archive
+- `train_16.csv`: 2,000 delivered rows, 21 features, deliberately damaged
 - `test_16.csv`: clean 500-row hidden feed without labels
 - `test_truth.csv`: server-side final answer key
-- `train_backup_10.csv` and `test_backup_10.csv`: matching clean backup tier
-- corruption, feature-strength, backup-list, and generation metadata
+- corruption, feature-strength, and generation metadata
 
 Organizer truth files are not exposed by a public HTTP route. For a real competition, keep the repository/private deployment boundary appropriate so participants cannot read organizer assets from source control.
 
@@ -103,4 +93,4 @@ node --check public/game.js
 python -m py_compile tools/local_ml_pipeline.py
 ```
 
-The tests cover dataset scale/parity, Manual Override priority/scoring, signed Feature Hunt state, repair-budget enforcement, the emergency feed, Kaggle code generation for the approved models, and the admission router. The local evaluator remains available for development-only scikit-learn checks; it is not deployed to Vercel.
+The tests cover dataset scale/parity, Manual Override priority/scoring, signed Feature Hunt state, repair-budget enforcement, cumulative Round 4 wallets, timed model-search notebook generation, and the admission router. The local evaluator remains available for development-only scikit-learn checks; it is not deployed to Vercel.

@@ -15,10 +15,10 @@ export default function handler(req, res) {
       return json(res, 200, { stage, trainFilename: "train_ready.csv", testFilename: "test_ready.csv", summary: prepared.summary });
     }
     if (stage === "quality") {
-      const state = verifyState(req.body?.qualityState, "quality", room, player), emergency = Boolean(state.emergencyFeed);
+      const state = verifyState(req.body?.qualityState, "quality", room, player);
       const prepared = prepareDatasets({
-        trainRows: emergency ? event.trainBackup : event.trainDamaged,
-        testRows: emergency ? event.testBackup : event.test,
+        trainRows: event.trainDamaged,
+        testRows: event.test,
         features: state.features,
         repairs: state.repairs,
         methods: state.methods

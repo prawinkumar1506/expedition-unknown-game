@@ -2,7 +2,7 @@
 
 ## Purpose and deployment boundary
 
-Operation Clearway is a browser-based multiplayer data-science game covering Events 2–5. Vercel serves the player, lobby, and host pages plus lightweight Node API routes. It deliberately **does not train models in production**: Event 5 creates a Kaggle Python cell from the team’s sealed choices. The optional scikit-learn evaluator is a local development tool only.
+Operation Clearway is a browser-based multiplayer data-science game with four active events. Vercel serves the player, lobby, and host pages plus lightweight Node API routes. It deliberately **does not train models in production**: Round 4 creates a Kaggle/local notebook from the team’s sealed feature, repair, and search choices. The optional scikit-learn evaluator is a local development tool only.
 
 ```text
 host.html ──POST /api/room──> SQLite game_rooms
@@ -37,9 +37,9 @@ The active player flow uses the room and Event 2–4 routes; their state-changin
 | `api/room.js` | `POST /api/room` | SQLite-backed room authority. `create` makes a 6-digit room with host token and 4-hour expiry; `join`, progress checkpoints, stage unlocks, and `start` are persisted in the local database. |
 | `api/mission.js` | `POST /api/mission` | Delivers public game metadata, Event 2 records/rules, features, preview rows, and Kaggle tuning defaults. It never exposes a training endpoint. |
 | `api/labels.js` | `POST /api/labels` | Validates Manual Override labels, applies the ordered rules from `_event.js`, scores `correct − wrong`, and seals a `manual` state token. |
-| `api/analyze.js` | `POST /api/analyze` | Maintains an HMAC-signed 10-credit investigation ledger. Provides stats, missingness, class-wise summaries, correlation matrices, and pair relationship bins. Reopening purchased evidence is free; answer-revealing feature importance is intentionally absent. |
+| `api/analyze.js` | `POST /api/analyze` | Maintains an HMAC-signed 10-credit investigation ledger. Provides class-profile evidence and pairwise Spearman correlation evidence. Reopening purchased evidence is free; answer-revealing feature importance and derived features are intentionally absent. |
 | `api/features.js` | `POST /api/features` | Requires exactly ten distinct valid features, verifies the investigation ledger, computes the strong-channel/investigation score, and seals a `features` token. |
-| `api/quality.js` | `POST /api/quality` | Builds a room-specific repair plan from corruption logs, validates a 15-credit repair choice, scores repair effectiveness, and seals a `quality` token. The Emergency Feed accepts only locks with at most four strong channels, gives 0 Event 3 points and 35/100 Event 4 score, then substitutes the fixed backup tier. |
+| `api/quality.js` | `POST /api/quality` | Builds a room-specific repair plan from corruption logs, validates the selected repair choice, scores repair effectiveness, and seals a `quality` token using the team's locked features. |
 | `api/health.js` | `GET /api/health` | Minimal availability response with server timestamp. |
 | `api/camera.js` | legacy endpoint | Returns HTTP 410: Event 2 is tabular, not an image round. |
 | `api/recovery.js` | legacy endpoint | Returns HTTP 410: the earlier recovery event is outside the Events 2–5 scope. |
@@ -50,8 +50,8 @@ The active player flow uses the room and Event 2–4 routes; their state-changin
 
 1. `labels.js` produces a signed manual state.
 2. `analyze.js` produces a signed investigation ledger; `features.js` consumes it and produces a feature state.
-3. `quality.js` consumes the feature state and produces a quality state with selected repairs or the bounded backup feed.
-4. The browser passes the visible sealed features, repairs, backup choice, model, and tuning settings to `kaggle-export.js`. The generated cell—not Vercel—trains and evaluates the model.
+3. `quality.js` consumes the feature state and produces a quality state with the team's selected repairs and locked features.
+4. The browser passes the sealed features, repairs, model, and tuning settings to `kaggle-export.js`. The generated cell—not Vercel—trains and evaluates the model.
 
 ## Client modules
 
@@ -59,8 +59,8 @@ The active player flow uses the room and Event 2–4 routes; their state-changin
 | --- | --- | --- |
 | `public/index.html` + `public/app.js` | `/` | Participant join form. Calls `room.js` with `join`, stores `{ room, player }` in `sessionStorage` as `expedition-session`, then opens the lobby. |
 | `public/lobby.html` + `public/lobby.js` | `/lobby.html` | Polls room state every five seconds, renders the roster, and redirects the team to `game.html` when the host starts the room. |
-| `public/game.html` + `public/game.js` | `/game.html` | Main player terminal. Runs Event 2–4 progression, preserves local UI state, requests server-signed seals, renders Event 5’s model/tuning form, and lets the team copy or download the generated Kaggle cell. `game.js` is an ES module. |
-| `public/kaggle-export.js` | imported by `game.js` | Pure client-side generator. Normalizes trials (5–100), folds (3–10), and seed; validates identifiers; selects model-specific distributions; serializes the sealed plan into a Kaggle cell; and supplies a safe download filename. |
+| `public/game.html` + `public/game.js` | `/game.html` | Main player terminal. Runs Events 1–4, preserves local/server UI state, requests server-signed seals, renders Round 4’s repair/model workbench, and downloads generated notebooks. `game.js` is an ES module. |
+| `public/kaggle-export.js` | imported by `game.js` | Pure client-side notebook generator. Validates the ten locked features, serializes the selected repair plan and search ranges, injects the chosen classifier, and supplies a safe download filename. |
 | `public/host.html` + `public/host.js` | `/host.html` | Host room lifecycle UI. Creates the room, shows roster, starts the game, and presents the Kaggle handoff checklist: teams retain `submission.csv`, `randomized_search_results.csv`, and `best_model_evaluation.json`. |
 | `public/mission.css` | `game.html` | Original game widgets: investigations, feature selection, repair cards, stage actions, and responsive layout. |
 | `public/game-adapter.css` | `game.html` | Adapts game widgets to the Adminator dashboard shell and provides page-level responsive styling. |
@@ -69,29 +69,27 @@ The active player flow uses the room and Event 2–4 routes; their state-changin
 
 ### Kaggle generator contract
 
-`buildKaggleScript()` receives the chosen model, ten sealed features, repair choices, Emergency Feed flag, and tuning settings. It writes a standalone Kaggle cell that:
+`buildKaggleScript()` receives the chosen model, ten sealed features, repair choices, and search-range settings. It writes a standalone notebook that:
 
-1. Locates the uploaded Event CSV files below `/kaggle/input`.
-2. Replays duplicate removal, label repair, missing-value handling, and outlier clipping from the sealed Event 4 plan.
-3. Builds a scikit-learn pipeline with imputation, scaling, and the selected classifier.
-4. Uses `RandomizedSearchCV` with `f1_macro` and shuffled `StratifiedKFold`.
-5. Refits the best configuration, then evaluates that estimator with `cross_val_score`. This second score is explicitly post-tuning; it is not a nested-CV estimate.
-6. Saves `submission.csv`, `randomized_search_results.csv`, and `best_model_evaluation.json`, then renders notebook download links with `FileLink`.
+1. Locates unchanged `train_16.csv` and `test_16.csv` beside the notebook, under `data/` or `data/traffic/`, or below `/kaggle/input`.
+2. Restricts inputs to the ten sealed features and applies only the selected missing-value/outlier repairs.
+3. Learns repair statistics inside each training fold through `RepairedClassifier`, avoiding validation leakage; row-removal methods affect training rows only.
+4. Runs real timed shuffled cross-validation with Macro F1 across the selected model search ranges.
+5. Evaluates the selected configuration on a held-out split and refits it on all training data.
+6. Saves `submission.csv`, `randomized_search_results.csv`, and `best_model_evaluation.json`.
 
-The selected search spaces cover Decision Tree, Logistic Regression, K-Nearest Neighbors, Random Forest, and RBF SVM. The generator does not read `test_truth.csv`.
+The selected search spaces cover ten approved models: five ensemble and five regular estimators. The generator does not read `test_truth.csv`.
 
 ## Data modules
 
 | Artifact | Used by | Contents |
 | --- | --- | --- |
-| `data/traffic/train_16.csv` | Events 3–5 / normal Kaggle path | 2,030 delivered damaged training rows with 16 telemetry features and labels. |
-| `data/traffic/test_16.csv` | Event 5 / normal Kaggle path | 500 clean test rows without labels. |
-| `data/traffic/train_backup_10.csv`, `test_backup_10.csv` | Emergency Feed / Kaggle path | Fixed clean 10-feature recovery tier. |
+| `data/traffic/train_16.csv` | Events 3–4 / notebook source | 2,000 delivered damaged training rows with 21 telemetry features and labels. |
+| `data/traffic/test_16.csv` | Event 4 / notebook source | 500 clean test rows without labels. |
 | `data/traffic/feature_strength_table.csv` | Feature Hunt | Organizer strength grouping used to score the sealed ten-feature choice. |
 | `data/traffic/corruption_log.csv` | Quality Lab and generated Kaggle cell | Missing, outlier, label, and duplicate evidence plus original values for repairs. |
-| `data/traffic/backup_feature_list.json` | Emergency Feed | Canonical backup feature order. |
 | `data/traffic/generation_metadata.json` | Mission metadata | Source-package generation and injected-corruption counts. |
-| `data/traffic/train_clean_16.csv`, `test_truth.csv` | local evaluator / organizer reference | Canonical train archive and final labels. They are not served by an HTTP route. For a real public competition, keep them out of the public repository and use an organizer-only scoring environment. |
+| `data/traffic/test_truth.csv` | local evaluator / organizer reference | Final labels used only for local/organizer checks. It is not read by generated participant notebooks. |
 
 ## SQLite module
 
@@ -107,9 +105,9 @@ The selected search spaces cover Decision Tree, Logistic Regression, K-Nearest N
 
 | Module | Coverage |
 | --- | --- |
-| `tests/game-phases.test.mjs` | Dataset shape, Manual Override scoring, signed analysis ledger, Feature Hunt lock, Quality Lab budget, bounded Emergency Feed, Kaggle cell generation, and retired camera behavior. |
+| `tests/game-phases.test.mjs` | Dataset shape, Manual Override scoring, signed analysis ledger, Feature Hunt lock, Quality Lab budget, Kaggle cell generation, and retired camera behavior. |
 | `tests/router.test.mjs` | Weighted rendezvous ordering and capacity guard behavior for the retained fleet router. |
-| `tests/test_ml_pipeline.py` | Local-only scikit-learn pipeline construction, reproducible five-fold diagnostics, submission shape, bounded Emergency Feed state, and HMAC tamper rejection. |
+| `tests/test_ml_pipeline.py` | Local-only scikit-learn pipeline construction, reproducible five-fold diagnostics, submission shape, and HMAC tamper rejection. |
 
 Run the active Node suite with `npm test`. To use the local evaluator, install `requirements-local.txt`, then run `python -m unittest discover -s tests -p "test_*.py" -v`.
 
@@ -123,4 +121,4 @@ Run the active Node suite with `npm test`. To use the local evaluator, install `
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | legacy fleet router | Enables atomic leases and heartbeat-aware capacity routing. |
 | `FLEET_HEARTBEAT_SECRET` | `heartbeat.js` | Required `x-fleet-key` value for fleet heartbeat writes. |
 
-Before a release: run `npm test`, `node --check public/game.js`, and `node --check public/kaggle-export.js`; start the standalone LAN server; create a host room; join with a player; and verify Event 5 downloads a model-specific Kaggle cell.
+Before a release: run `npm test`, `node --check public/game.js`, and `node --check public/kaggle-export.js`; start the standalone LAN server; create a host room; join with a player; and verify Round 4 downloads a model-specific notebook that reads the unchanged source CSV pair.

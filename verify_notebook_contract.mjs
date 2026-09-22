@@ -23,16 +23,16 @@ const out = buildKaggleScript({
 const parsed = JSON.parse(out);
 const code = parsed.cells.find((c) => c.cell_type === 'code').source.join('');
 const result = {
-  filename: kaggleFilename('Decision Tree', 'ipynb'),
-  hasTrainRead: code.includes('pd.read_csv("train_16.csv")'),
-  hasTestRead: code.includes('pd.read_csv("test_16.csv")'),
+  filename: kaggleFilename('Random Forest', 'ipynb'),
+  hasTrainRead: code.includes('TRAIN_FILE = "train_16.csv"') && code.includes("pd.read_csv(find_data(TRAIN_FILE))"),
+  hasTestRead: code.includes('TEST_FILE = "test_16.csv"') && code.includes("pd.read_csv(find_data(TEST_FILE))"),
   hasSelectionMatch: code.includes('X = train_df[FEATURES].copy()') && code.includes('X_test = test_df[FEATURES].copy()'),
   hasSubmissionWrite: code.includes('submission.to_csv("submission.csv", index=False)'),
-  noKaggleText: !code.toLowerCase().includes('kaggle')
+  noOrganizerTruth: !code.includes('test_truth') && !code.includes('train_clean')
 };
 
 console.log(JSON.stringify(result, null, 2));
 
-if (!result.hasTrainRead || !result.hasTestRead || !result.hasSelectionMatch || !result.hasSubmissionWrite || !result.noKaggleText) {
+if (!result.hasTrainRead || !result.hasTestRead || !result.hasSelectionMatch || !result.hasSubmissionWrite || !result.noOrganizerTruth) {
   process.exit(1);
 }

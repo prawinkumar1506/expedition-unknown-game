@@ -30,11 +30,8 @@ test("the supplied package loads the exact event-scale train/test tiers", async 
   assert.equal(event.trainClean.length, event.trainDamaged.length);
   assert.equal(event.test.length, 500);
   assert.equal(event.features.length, 21);
-  assert.equal(event.backupFeatures.length, 10);
   assert.equal(event.manualRows.length, 50);
   assert.deepEqual(Object.keys(event.test[0]).filter(key => key !== "event_id"), event.features);
-  assert.deepEqual(Object.keys(event.testBackup[0]).filter(key => key !== "event_id"), event.backupFeatures);
-  assert.deepEqual(Object.keys(event.trainBackup[0]).filter(key => !["event_id", "label"].includes(key)), event.backupFeatures);
   assert.ok(event.test.every(row => !("label" in row)));
   assert.equal(mission.body.mission.scope, "Events 2–5");
   assert.deepEqual(mission.body.submissionSchema, ["event_id", "prediction"]);
@@ -144,20 +141,10 @@ test("Feature Hunt scores strong channels at 2 points, moderate at 1, and weak a
   assert.equal(result.body.strongCount + result.body.moderateCount + result.body.weakCount, 10);
 });
 
-test("Data Quality Lab enforces the 15-credit typed repair plan", async () => {
+test("Data Quality Lab prices typed repair choices at 3 credits per column", async () => {
   const flow = await sealedFlow(), scored = scoreRepairPlan(flow.plan, flow.quality.qualityState ? { missingColumns: flow.plan.missingColumns.slice(0, 3).map(item => item.feature), outlierColumns: flow.plan.outlierColumns.slice(0, 2).map(item => item.feature), labelRecords: [], duplicateGroups: [] } : {});
   assert.equal(flow.quality.repairSpend, 15); assert.ok(flow.quality.qualityScore > 0); assert.ok(scored > 0);
     assert.equal(flow.quality.sealed, true);
-});
-
-test("Emergency Feed is a low-score breakout route, not an alternate winning path", async () => {
-  const room = "400004", player = "rescue-team", event = assignment(room);
-  const strongLock = await invoke(featuresHandler, { room, player, features: event.features.slice(0, 10) });
-  const blocked = await invoke(qualityHandler, { room, player, action: "seal", featureState: strongLock.body.featureState, emergencyFeed: true, repairs: {} });
-  assert.equal(blocked.statusCode, 409); assert.match(blocked.body.error, /4 or fewer strong/i);
-  const poorLock = await invoke(featuresHandler, { room, player: "poor-lock", features: [...event.features.slice(0, 4), ...event.features.slice(-6)] });
-  const result = await invoke(qualityHandler, { room, player: "poor-lock", action: "seal", featureState: poorLock.body.featureState, emergencyFeed: true, repairs: {} });
-  assert.equal(result.statusCode, 200); assert.equal(poorLock.body.strongCount, 4); assert.equal(result.body.featureScore, 0); assert.equal(result.body.qualityScore, 35); assert.deepEqual(result.body.features, event.backupFeatures);
 });
 
 test("Event 4 reports credit spend and elapsed time in the sealed quality payload", async () => {
@@ -203,38 +190,35 @@ test("feature and quality choices are baked into prepared train/test datasets", 
   assert.ok(!prepared.body.trainCsv.split("\n", 1)[0].includes(event.features[10]));
 });
 
-test("Event 5 notebook reuses unchanged source datasets and carries feature/repair decisions", () => {
-  const tuning = normalizeTuning({ trials: 27, folds: 5, randomState: 90210 });
+test("Round 4 notebook reuses unchanged source datasets and carries feature/repair decisions", () => {
+  const tuning = normalizeTuning({ randomState: 90210, ranges: { n_estimators: 2, max_depth: 2, min_samples_leaf: 2, max_features: 2 } });
   const selected = assignment("500005").features.slice(0, 10);
-  const notebook = buildKaggleScript({ model: "Random Forest", features: selected, trainFile: "train_16.csv", testFile: "test_16.csv", repairs: { missingColumns: [selected[0]], outlierColumns: [selected[1]] }, repairMethods: { missing: { [selected[0]]: "median" }, outlier: { [selected[1]]: "iqr_clip" } }, tuning, notebook: true });
-  assert.match(notebook, /"cells"/); assert.match(notebook, /"nbformat"/); assert.match(notebook, /submission\.csv/); assert.match(notebook, /submission\.to_csv\(.*submission\.csv.*index=False/i); assert.match(notebook, /classification_report/);
-  assert.match(notebook, /train_16\.csv/); assert.match(notebook, /test_16\.csv/);
-  assert.match(notebook, /SELECTED_REPAIRS/); assert.match(notebook, /REPAIR_METHODS/);
-  assert.match(notebook, /fillna/); assert.match(notebook, /iqr_clip/);
-  assert.match(notebook, /Projected source data to the 10 locked features/);
-  assert.match(notebook, /unchanged source files/i);
-  assert.match(notebook, /verbose=2/);
-  assert.match(notebook, /TRAIN\/TUNE START/);
-  assert.match(notebook, /training fits/);
-  assert.match(notebook, /BEST CV/);
-  assert.match(notebook, /BEST PARAMS/);
-  assert.match(notebook, /Held-out macro F1/);
-  assert.match(notebook, /FINAL TRAIN/);
-  assert.match(notebook, /final_model\.fit\(X, y\)/);
-  assert.match(notebook, /PREDICT TEST/);
-  assert.match(notebook, /WRITE OUTPUT/);
-  assert.match(notebook, /Entire run finished/);
-  const backup = buildKaggleScript({ model: "Support Vector Machine", features: assignment("500005").backupFeatures, trainFile: "train_backup_10.csv", testFile: "test_backup_10.csv", notebook: true });
-  assert.match(backup, /train_backup_10\.csv/); assert.match(backup, /test_backup_10\.csv/); assert.match(backup, /SVC\(kernel=/);
-  assert.equal(kaggleFilename("Decision Tree", "ipynb"), "decision-tree-randomized-search.ipynb");
+  const notebook = JSON.parse(buildKaggleScript({ model: "Random Forest", features: selected, repairs: { missingColumns: [selected[0]], outlierColumns: [selected[1]] }, tuning: { ...tuning, repairMethods: { missing: { [selected[0]]: "median" }, outlier: { [selected[1]]: "iqr_clip" } } }, notebook: true }));
+  const code = notebook.cells.find(cell => cell.cell_type === "code").source.join("");
+  assert.equal(notebook.nbformat, 4);
+  assert.match(code, /TRAIN_FILE = "train_16\.csv"/);
+  assert.match(code, /TEST_FILE = "test_16\.csv"/);
+  assert.match(code, /REPAIRS = json\.loads/);
+  assert.match(code, /REPAIR_METHODS = json\.loads/);
+  assert.match(code, /find_data/);
+  assert.match(code, /RepairedClassifier/);
+  assert.match(code, /classification_report/);
+  assert.match(code, /randomized_search_results\.csv/);
+  assert.match(code, /best_model_evaluation\.json/);
+  assert.match(code, /submission\.to_csv\("submission\.csv", index=False\)/);
+  assert.doesNotMatch(code, /train_ready|test_ready|test_truth|train_clean/);
+  assert.equal(kaggleFilename("Decision Tree", "ipynb"), "decision-tree-regular-search.ipynb");
 });
 
-test("the combined repair and model handoff stage enforces a 60-minute window", async () => {
+test("Round 4 lasts 90 minutes and completion opens after 60 minutes", async () => {
+  const { ROUND4 } = await import("../public/round4-config.js");
+  assert.equal(ROUND4.durationSeconds, 90 * 60);
+  assert.equal(ROUND4.minimumSeconds, 60 * 60);
   const fs = await import("node:fs/promises");
   const source = await fs.readFile(new URL("../public/game.js", import.meta.url), "utf8");
-  assert.match(source, /QUALITY_TIMEOUT_SECONDS\s*=\s*60\s*\*\s*60/);
-  assert.match(source, /forecastLocked|combined.*timer|60-minute|60 minute/i);
-  assert.match(source, /generateKaggle|generate.*notebook.*expired|notebook.*locked/i);
+  assert.match(source, /QUALITY_TIMEOUT_SECONDS\s*=\s*ROUND4\.durationSeconds/);
+  assert.match(source, /round4Elapsed\(\) < ROUND4\.minimumSeconds/);
+  assert.match(source, /round4Closed\(\) \|\| generatingNotebook/);
 });
 
 test("the retired camera route states that Event 2 is tabular", () => {
