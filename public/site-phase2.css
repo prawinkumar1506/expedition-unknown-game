@@ -1,0 +1,486 @@
+.auth-card,.hero,.card,.host-console,.wait-room{transition:transform .25s ease,box-shadow .25s ease,border-color .25s ease}.auth-card:hover,.host-console:hover,.wait-room:hover{transform:translateY(-2px);box-shadow:0 18px 55px #00000012}.real-players span{transition:transform .18s ease,border-color .18s ease,background .18s ease}.real-players span:hover{transform:translateY(-2px);border-color:var(--cyan)}
+
+/* Clearway sidebar refresh: team identity + prominent event navigation */
+.d-sidebar .game-events { margin-top: 10px; }
+.d-sidebar .game-events .nav-label { margin-bottom: 10px; }
+.d-sidebar .game-events .nav-link.stage {
+  min-height: 54px;
+  padding: 12px 14px;
+  margin: 4px 0;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: .005em;
+  transition: transform .18s ease, background .18s ease, box-shadow .18s ease, color .18s ease;
+}
+.d-sidebar .game-events .nav-link.stage:hover {
+  transform: translateX(3px);
+  box-shadow: 0 8px 22px rgba(0,0,0,.12);
+}
+.d-sidebar .game-events .nav-link.stage .nav-badge {
+  min-width: 30px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  display: inline-grid;
+  place-items: center;
+  font-weight: 800;
+}
+.d-sidebar .team-profile {
+  margin: auto 10px 18px;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--panel) 94%, var(--cyan)), var(--panel));
+  box-shadow: 0 10px 28px rgba(0,0,0,.12);
+}
+.d-sidebar .team-avatar {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--primary, #66a9ff);
+  color: #fff;
+  font: 800 15px/1 'Inter';
+  box-shadow: 0 7px 18px rgba(40,110,220,.24);
+}
+.d-sidebar .team-profile-copy { min-width: 0; display: grid; gap: 3px; }
+.d-sidebar .team-profile-label { color: var(--muted); font: 8px 'JetBrains Mono', monospace; letter-spacing: .13em; }
+.d-sidebar .team-profile-copy strong { color: var(--text); font: 700 14px/1.25 'Inter', sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.d-sidebar .team-profile-copy small { color: var(--muted); font: 9px 'JetBrains Mono', monospace; }
+:root[data-theme="light"] .d-sidebar .team-profile { background: linear-gradient(145deg,#fff,#eef5ff); box-shadow: 0 10px 26px rgba(30,70,120,.10); }
+
+/* Readability: mission copy and event navigation use full-contrast white text. */
+.game-workspace .hero-sub,
+.game-workspace .story-description p,
+.d-sidebar .game-events .nav-label,
+.d-sidebar .game-events .nav-link.stage,
+.d-sidebar .game-events .nav-link.stage > span:first-child {
+  color: #fff !important;
+}
+.d-sidebar .game-events .nav-link.stage.is-active,
+.d-sidebar .game-events .nav-link.stage.active {
+  color: #fff !important;
+}
+
+/* Feature Hunt investigation menu: make the tool choices easy to read at a glance. */
+.game-workspace .investigation-shell {
+  grid-template-columns: 370px minmax(0, 1fr);
+  gap: 18px;
+}
+.game-workspace .tool-catalog > .panel-title {
+  padding: 18px 20px;
+  font-size: 14px;
+}
+.game-workspace .tool-catalog > button {
+  min-height: 108px;
+  padding: 20px 20px;
+  gap: 18px;
+}
+.game-workspace .tool-catalog > button span b {
+  font-size: 17px !important;
+  line-height: 1.25;
+  letter-spacing: -.01em;
+}
+.game-workspace .tool-catalog > button span small {
+  margin-top: 9px;
+  font-size: 13px !important;
+  line-height: 1.55;
+}
+.game-workspace .tool-catalog > button strong {
+  min-width: 48px;
+  font-size: 12px;
+}
+
+@media (max-width: 1050px) {
+  .game-workspace .investigation-shell { grid-template-columns: 320px minmax(0,1fr); }
+}
+@media (max-width: 760px) {
+  .game-workspace .investigation-shell { grid-template-columns: 1fr; }
+}
+
+/* Mission-facing hero copy uses white for the primary descriptive text. */
+.hero-sub { color: #fff !important; }
+
+/* Final readability/theme pass: dark mode keeps the requested white mission copy;
+   light mode switches those same elements back to high-contrast ink. */
+:root[data-theme="light"] .game-workspace .hero-sub,
+:root[data-theme="light"] .game-workspace .story-description p,
+:root[data-theme="light"] .d-sidebar .game-events .nav-label,
+:root[data-theme="light"] .d-sidebar .game-events .nav-link.stage,
+:root[data-theme="light"] .d-sidebar .game-events .nav-link.stage > span:first-child,
+:root[data-theme="light"] .d-sidebar .game-events .nav-link.stage.is-active,
+:root[data-theme="light"] .d-sidebar .game-events .nav-link.stage.active {
+  color: var(--text) !important;
+}
+
+:root[data-theme="light"] .game-workspace .tool-catalog > button {
+  background: #fff;
+  color: var(--text);
+}
+:root[data-theme="light"] .game-workspace .tool-catalog > button:hover,
+:root[data-theme="light"] .game-workspace .tool-catalog > button.active {
+  background: #edf4fb;
+}
+:root[data-theme="light"] .game-workspace .tool-catalog > button span small,
+:root[data-theme="light"] .game-workspace .analysis-config > div p {
+  color: var(--muted);
+}
+:root[data-theme="light"] .game-workspace .analysis-config select {
+  background: #fff;
+  color: var(--text);
+}
+:root[data-theme="light"] .game-workspace .analysis-status {
+  background: #f4f7fa;
+  color: var(--cyan);
+}
+:root[data-theme="light"] .game-workspace .finding {
+  background: #fff;
+}
+:root[data-theme="light"] .game-workspace .finding > header,
+:root[data-theme="light"] .game-workspace .analysis-table thead {
+  background: #f3f6f9;
+  color: var(--text);
+}
+:root[data-theme="light"] .game-workspace .finding > header b,
+:root[data-theme="light"] .game-workspace .analysis-table th,
+:root[data-theme="light"] .game-workspace .analysis-table td {
+  color: var(--text);
+}
+:root[data-theme="light"] .game-workspace .empty-finding {
+  color: var(--muted);
+}
+
+/* ================================================================
+   Final light-theme contrast pass
+   Keep the light UI readable even where the original game layer uses
+   hard-coded dark/light text colors.
+   ================================================================ */
+:root[data-theme="light"] .d-topbar .crumbs,
+:root[data-theme="light"] .d-topbar .crumbs .current,
+:root[data-theme="light"] .d-topbar .crumbs .sep {
+  color: #17202b !important;
+}
+
+:root[data-theme="light"] .game-workspace,
+:root[data-theme="light"] .game-workspace .card,
+:root[data-theme="light"] .game-workspace .selection-board,
+:root[data-theme="light"] .game-workspace .tool-catalog,
+:root[data-theme="light"] .game-workspace .evidence-console,
+:root[data-theme="light"] .game-workspace .finding,
+:root[data-theme="light"] .game-workspace .repair-case,
+:root[data-theme="light"] .game-workspace .model,
+:root[data-theme="light"] .game-workspace .pick.feature {
+  color: #17202b;
+}
+
+:root[data-theme="light"] .game-workspace .story-brief > span,
+:root[data-theme="light"] .game-workspace .eyebrow,
+:root[data-theme="light"] .game-workspace .incident-ribbon small,
+:root[data-theme="light"] .game-workspace .panel-title,
+:root[data-theme="light"] .game-workspace .panel-title span,
+:root[data-theme="light"] .game-workspace .story-beats span,
+:root[data-theme="light"] .game-workspace .analysis-config > div span,
+:root[data-theme="light"] .game-workspace .analysis-config label,
+:root[data-theme="light"] .game-workspace .matrix-hint,
+:root[data-theme="light"] .game-workspace .matrix-legend,
+:root[data-theme="light"] .game-workspace .finding > header span,
+:root[data-theme="light"] .game-workspace .finding > header small,
+:root[data-theme="light"] .game-workspace .metric-grid small,
+:root[data-theme="light"] .game-workspace .feature-lock > span,
+:root[data-theme="light"] .game-workspace .recovery-message {
+  color: #536174 !important;
+}
+
+:root[data-theme="light"] .game-workspace .story-brief h1,
+:root[data-theme="light"] .game-workspace .story-description p,
+:root[data-theme="light"] .game-workspace .incident-ribbon b,
+:root[data-theme="light"] .game-workspace .panel-title,
+:root[data-theme="light"] .game-workspace .panel-title span,
+:root[data-theme="light"] .game-workspace .analysis-config > div b,
+:root[data-theme="light"] .game-workspace .analysis-config select,
+:root[data-theme="light"] .game-workspace .finding > header b,
+:root[data-theme="light"] .game-workspace .analysis-table th,
+:root[data-theme="light"] .game-workspace .analysis-table td,
+:root[data-theme="light"] .game-workspace .metric-grid strong,
+:root[data-theme="light"] .game-workspace .relationship-score,
+:root[data-theme="light"] .game-workspace .relationship-score strong,
+:root[data-theme="light"] .game-workspace .feature-lock b,
+:root[data-theme="light"] .game-workspace .feature-score b,
+:root[data-theme="light"] .game-workspace .tool-catalog > button,
+:root[data-theme="light"] .game-workspace .tool-catalog > button span b,
+:root[data-theme="light"] .game-workspace .pick.feature span,
+:root[data-theme="light"] .game-workspace .model > b,
+:root[data-theme="light"] .game-workspace .model > span,
+:root[data-theme="light"] .game-workspace .model > small {
+  color: #17202b !important;
+}
+
+:root[data-theme="light"] .game-workspace .hero-sub,
+:root[data-theme="light"] .game-workspace .story-description p {
+  color: #17202b !important;
+}
+
+:root[data-theme="light"] .game-workspace .analysis-config select,
+:root[data-theme="light"] .game-workspace .manual-table select {
+  background: #fff !important;
+  border-color: #b9c4d0 !important;
+  color: #17202b !important;
+}
+
+:root[data-theme="light"] .game-workspace .analysis-status {
+  background: #f4f7fa !important;
+  color: #087f78 !important;
+}
+
+:root[data-theme="light"] .game-workspace .tool-catalog > button,
+:root[data-theme="light"] .game-workspace .finding,
+:root[data-theme="light"] .game-workspace .repair-case,
+:root[data-theme="light"] .game-workspace .model,
+:root[data-theme="light"] .game-workspace .pick.feature {
+  background: #fff !important;
+  border-color: #d2d9e2 !important;
+}
+
+:root[data-theme="light"] .game-workspace .tool-catalog > button:hover,
+:root[data-theme="light"] .game-workspace .tool-catalog > button.active,
+:root[data-theme="light"] .game-workspace .model:hover,
+:root[data-theme="light"] .game-workspace .pick.feature:hover {
+  background: #edf4fb !important;
+}
+
+:root[data-theme="light"] .game-workspace .finding > header,
+:root[data-theme="light"] .game-workspace .analysis-table thead,
+:root[data-theme="light"] .game-workspace .matrix-toolbar {
+  background: #f3f6f9 !important;
+  color: #17202b !important;
+}
+
+/* The top mission chrome was the remaining low-contrast light-theme area. */
+:root[data-theme="light"] .hero .eyebrow,
+:root[data-theme="light"] .hero-title,
+:root[data-theme="light"] .hero-sub,
+:root[data-theme="light"] .d-footer,
+:root[data-theme="light"] .d-footer-meta,
+:root[data-theme="light"] .stage-timer-label,
+:root[data-theme="light"] .stage-timer-value {
+  color: #17202b !important;
+}
+:root[data-theme="light"] .hero-title .accent { color: #2867e8 !important; }
+:root[data-theme="light"] .hero .eyebrow { color: #8a5a00 !important; }
+
+/* ================================================================
+   Channel relationship controls
+   Use a grid rather than a flexible row so the Run button always has
+   its own column when the sidebar is open.
+   ================================================================ */
+.game-workspace .analysis-config {
+  display: grid !important;
+  grid-template-columns: minmax(200px, 1.35fr) minmax(150px, 1fr) minmax(150px, 1fr) minmax(132px, auto) !important;
+  align-items: end !important;
+  gap: 12px !important;
+}
+.game-workspace .analysis-config > div,
+.game-workspace .analysis-config > label,
+.game-workspace .analysis-config > #run-analysis {
+  min-width: 0 !important;
+  width: 100% !important;
+}
+.game-workspace .analysis-config > #run-analysis {
+  min-width: 132px !important;
+  min-height: 42px;
+  white-space: nowrap;
+  align-self: end;
+}
+@media (max-width: 1180px) {
+  .game-workspace .analysis-config {
+    grid-template-columns: minmax(180px, 1fr) minmax(150px, 1fr) minmax(132px, auto) !important;
+  }
+}
+@media (max-width: 900px) {
+  .game-workspace .analysis-config {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .game-workspace .analysis-config > div { grid-column: 1 / -1; }
+  .game-workspace .analysis-config > #run-analysis { width: max-content !important; }
+}
+@media (max-width: 650px) {
+  .game-workspace .analysis-config { grid-template-columns: 1fr !important; }
+  .game-workspace .analysis-config > div { grid-column: auto; }
+  .game-workspace .analysis-config > #run-analysis { width: 100% !important; }
+}
+
+/* ================================================================
+   Neutral matrix presentation
+   Positive/negative values must not be visually encoded by color.
+   ================================================================ */
+.game-workspace .matrix-table td.corr-positive,
+.game-workspace .matrix-table td.corr-negative,
+.game-workspace .matrix-table td.corr-diagonal {
+  background: var(--panel) !important;
+  color: var(--text) !important;
+}
+.game-workspace .matrix-table td.corr-positive:hover,
+.game-workspace .matrix-table td.corr-negative:hover,
+.game-workspace .matrix-table td.corr-diagonal:hover {
+  background: var(--panel2) !important;
+}
+.game-workspace .matrix-summary strong.positive,
+.game-workspace .matrix-summary strong.negative {
+  color: var(--text) !important;
+}
+.game-workspace .matrix-legend .legend-dot.positive,
+.game-workspace .matrix-legend .legend-dot.negative {
+  background: var(--line2) !important;
+}
+:root[data-theme="light"] .game-workspace .matrix-table td.corr-positive,
+:root[data-theme="light"] .game-workspace .matrix-table td.corr-negative,
+:root[data-theme="light"] .game-workspace .matrix-table td.corr-diagonal {
+  background: #fff !important;
+  color: #17202b !important;
+}
+:root[data-theme="light"] .game-workspace .matrix-table td.corr-positive:hover,
+:root[data-theme="light"] .game-workspace .matrix-table td.corr-negative:hover,
+:root[data-theme="light"] .game-workspace .matrix-table td.corr-diagonal:hover {
+  background: #f1f4f7 !important;
+}
+
+/* ================================================================
+   Sticky matrix corner + row labels
+   Both axes stay anchored while the user explores the full matrix.
+   ================================================================ */
+.game-workspace .matrix-scroll {
+  position: relative;
+  overflow: auto;
+  isolation: isolate;
+}
+.game-workspace .matrix-table thead th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 20 !important;
+  background: var(--panel2) !important;
+}
+.game-workspace .matrix-table thead th:first-child {
+  position: sticky !important;
+  top: 0 !important;
+  left: 0 !important;
+  z-index: 30 !important;
+  background: var(--panel2) !important;
+}
+.game-workspace .matrix-table tbody th {
+  position: sticky !important;
+  left: 0 !important;
+  z-index: 15 !important;
+  background: var(--panel2) !important;
+}
+:root[data-theme="light"] .game-workspace .matrix-table thead th,
+:root[data-theme="light"] .game-workspace .matrix-table tbody th {
+  background: #f8fafc !important;
+  color: #17202b !important;
+}
+
+/* Light theme for the expanded evidence viewer. */
+:root[data-theme="light"] .clearway-evidence-backdrop {
+  background: rgba(15, 23, 42, .42) !important;
+}
+:root[data-theme="light"] .clearway-evidence-modal {
+  background: #fff !important;
+  color: #17202b !important;
+  border-color: #cbd4df !important;
+  box-shadow: 0 30px 100px rgba(31, 48, 72, .24) !important;
+}
+:root[data-theme="light"] .clearway-evidence-head {
+  background: rgba(255,255,255,.97) !important;
+  border-color: #d8dee7 !important;
+}
+:root[data-theme="light"] .clearway-evidence-head strong,
+:root[data-theme="light"] .clearway-evidence-body .finding > header b,
+:root[data-theme="light"] .clearway-evidence-body .analysis-table th,
+:root[data-theme="light"] .clearway-evidence-body .analysis-table td,
+:root[data-theme="light"] .clearway-evidence-body .matrix-summary b,
+:root[data-theme="light"] .clearway-evidence-body .matrix-table th,
+:root[data-theme="light"] .clearway-evidence-body .matrix-table td,
+:root[data-theme="light"] .clearway-evidence-body .relationship-score,
+:root[data-theme="light"] .clearway-evidence-body .relationship-score strong {
+  color: #17202b !important;
+}
+:root[data-theme="light"] .clearway-evidence-head span,
+:root[data-theme="light"] .clearway-evidence-body .matrix-summary small,
+:root[data-theme="light"] .clearway-evidence-body .matrix-hint,
+:root[data-theme="light"] .clearway-evidence-body .matrix-legend,
+:root[data-theme="light"] .clearway-evidence-body .finding > header span,
+:root[data-theme="light"] .clearway-evidence-body .finding > header small {
+  color: #536174 !important;
+}
+:root[data-theme="light"] .clearway-evidence-close {
+  background: #f1f4f8 !important;
+  color: #17202b !important;
+  border-color: #cbd4df !important;
+}
+
+/* Make the expanded viewer materially larger than the inline evidence. */
+.clearway-evidence-modal {
+  width: min(1900px, 99vw) !important;
+  max-height: 98vh !important;
+}
+.clearway-evidence-head {
+  padding: 24px 30px !important;
+}
+.clearway-evidence-head strong { font-size: 24px !important; }
+.clearway-evidence-body { padding: 34px !important; }
+.clearway-evidence-body .finding { font-size: 1.35rem !important; }
+.clearway-evidence-body .matrix-scroll {
+  max-height: 78vh !important;
+}
+.clearway-evidence-body .matrix-table {
+  min-width: 2700px !important;
+  font-size: 16px !important;
+}
+.clearway-evidence-body .matrix-table th,
+.clearway-evidence-body .matrix-table td {
+  min-width: 116px !important;
+  width: 116px !important;
+  height: 82px !important;
+  padding: 14px 12px !important;
+}
+.clearway-evidence-body .matrix-table thead th {
+  min-width: 136px !important;
+  width: 136px !important;
+  height: 124px !important;
+  font-size: 15px !important;
+}
+.clearway-evidence-body .matrix-table thead th:first-child,
+.clearway-evidence-body .matrix-table tbody th {
+  min-width: 250px !important;
+  width: 250px !important;
+}
+.clearway-evidence-body .matrix-table tbody th { font-size: 15px !important; }
+.clearway-evidence-body .matrix-table td span { font-size: 17px !important; }
+.clearway-evidence-body .matrix-table thead th:first-child {
+  position: sticky !important;
+  top: 0 !important;
+  left: 0 !important;
+  z-index: 40 !important;
+}
+.clearway-evidence-body .matrix-table thead th:not(:first-child) {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 30 !important;
+}
+.clearway-evidence-body .matrix-table tbody th {
+  position: sticky !important;
+  left: 0 !important;
+  z-index: 20 !important;
+}
+:root[data-theme="light"] .clearway-evidence-body .matrix-table td.corr-positive,
+:root[data-theme="light"] .clearway-evidence-body .matrix-table td.corr-negative,
+:root[data-theme="light"] .clearway-evidence-body .matrix-table td.corr-diagonal {
+  background: #fff !important;
+  color: #17202b !important;
+}

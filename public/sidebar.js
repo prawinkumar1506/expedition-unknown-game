@@ -59,3 +59,20 @@
     }
   });
 })();
+
+// Populate the sidebar identity from the team name entered on the join screen.
+(() => {
+  const nameEl = document.querySelector('#team-profile-name');
+  const avatarEl = document.querySelector('#team-avatar');
+  const roomEl = document.querySelector('#team-profile-room');
+  if (!nameEl) return;
+  try {
+    const session = JSON.parse(sessionStorage.getItem('expedition-session') || 'null');
+    const name = String(session?.player || 'Your team').trim() || 'Your team';
+    nameEl.textContent = name;
+    if (avatarEl) avatarEl.textContent = name.charAt(0).toUpperCase();
+    if (roomEl) roomEl.textContent = session?.room ? `Room ${session.room}` : 'Control room';
+  } catch {
+    nameEl.textContent = 'Your team';
+  }
+})();

@@ -3,7 +3,7 @@ import { buildKaggleScript, kaggleFilename, normalizeTuning } from "/kaggle-expo
 const session = JSON.parse(sessionStorage.getItem("expedition-session") || "null");
 if (!session) window.location.replace("/");
 
-const box = document.querySelector("#workspace"), download = document.querySelector("#export"), statusText = document.querySelector("#mission-status");
+const box = document.querySelector("#workspace"), statusText = document.querySelector("#mission-status");
 const featureCredit = document.querySelector("#f-credit"), repairCredit = document.querySelector("#r-credit"), evaluationCredit = document.querySelector("#e-credit"), stageTimers = document.querySelector("#stage-timers");
 const stageOrder = ["event1", "manual", "features", "quality"];
 const analysisCatalog = [
@@ -33,10 +33,16 @@ let qualityTimeSpentSec = 0, qualityTimerId = null, qualityTimerStart = 0;
 let model = "Decision Tree", tuning = normalizeTuning(), hyperparameters = {}, forecastRuns = [], kaggleScript = "", forecastStatus = "", forecastLocked = false;
 let forecastTimeSpentSec = 0, forecastTimerId = null, forecastTimerStart = 0;
 let roomControl = { stageUnlocks: { global: ["event1"], players: {} } }, checkpointTimer = null;
-const FEATURE_TIMEOUT_SECONDS = 30 * 60;
-const QUALITY_TIMEOUT_SECONDS = 60 * 60;
-const EVENT1_TIMEOUT_SECONDS = 15 * 60;
-const FORECAST_TIMEOUT_SECONDS = QUALITY_TIMEOUT_SECONDS;
+// TEST TIMER
+// Set TEST_TIMER_ENABLED = true while developing to make every game-stage timer 10 seconds.
+// Set it back to false before a real player session.
+const TEST_TIMER_ENABLED = true;
+const TEST_TIMER_SECONDS = 50;
+const FEATURE_TIMEOUT_SECONDS = TEST_TIMER_ENABLED ? TEST_TIMER_SECONDS : 30 * 60;
+const QUALITY_TIMEOUT_SECONDS = TEST_TIMER_ENABLED ? TEST_TIMER_SECONDS : 60 * 60;
+const EVENT1_TIMEOUT_SECONDS = TEST_TIMER_ENABLED ? TEST_TIMER_SECONDS : 15 * 60;
+const FORECAST_TIMEOUT_SECONDS = TEST_TIMER_ENABLED ? TEST_TIMER_SECONDS : QUALITY_TIMEOUT_SECONDS;
+const MANUAL_TIMEOUT_SECONDS = TEST_TIMER_ENABLED ? TEST_TIMER_SECONDS : 15 * 60;
 const stageStorageKey = `clearway-progress:${session?.room || "unknown"}:${session?.player || "unknown"}`;
 const REPAIR_BUDGET = 50, EMERGENCY_REPAIR_COST = 30;
 const modelSpend = () => forecastRuns.reduce((sum, run) => sum + Number(run.cost || 0), 0);
@@ -61,9 +67,36 @@ const hydrate = room => {
   roomControl = room || roomControl;
   const serverState = room?.progress?.[session.player];
   const localState = JSON.parse(localStorage.getItem(stageStorageKey) || "null");
-  applyState(serverState || localState);
-  if (!stageIsUnlocked(stage)) stage = stageOrder.find(name => stageIsUnlocked(name)) || "event1";
-  checkpoint();
+  const freshJoin = sessionStorage.getItem("clearway-fresh-join") === "1";
+  const firstGameOpen = sessionStorage.getItem("clearway-game-initialized") !== "1";
+  if (freshJoin || firstGameOpen) {
+    sessionStorage.removeItem("clearway-fresh-join");
+    sessionStorage.setItem("clearway-game-initialized", "1");
+    stage = "event1";
+    highestStage = 0;
+    event1Result = null;
+    event1Status = "";
+    event1Selections = [];
+    event1TimeSpentSec = 0;
+    event1TimerStart = Date.now();
+    manualLabels = {};
+    manualLocked = false;
+    manualResult = null;
+    manualStatus = "";
+    featureState = "";
+    featureResult = null;
+    selectedFeatures = new Set();
+    analysisState = "";
+    analysisCredits = 10;
+    findings = [];
+    qualityState = "";
+    qualityResult = null;
+    checkpoint();
+  } else {
+    applyState(serverState || localState);
+    if (!stageIsUnlocked(stage)) stage = stageOrder.find(name => stageIsUnlocked(name)) || "event1";
+    checkpoint();
+  }
 };
 const pollRoomControl = async () => { try { const result = await request("/api/room", { action: "get", pin: session.room }); const previousUnlocks = JSON.stringify(roomControl.stageUnlocks || {}); roomControl = result.room; if (previousUnlocks !== JSON.stringify(roomControl.stageUnlocks || {})) render(); } catch {} };
 document.addEventListener("click", () => checkpoint());
@@ -75,7 +108,7 @@ const formatCountdown = (secondsRemaining) => {
   const seconds = String(totalSeconds % 60).padStart(2, "0");
   return `${minutes}:${seconds}`;
 };
-const formatManualCountdown = () => formatCountdown(15 * 60 - manualTimeSpentSec);
+const formatManualCountdown = () => formatCountdown(MANUAL_TIMEOUT_SECONDS - manualTimeSpentSec);
 const formatFeatureCountdown = () => formatCountdown(FEATURE_TIMEOUT_SECONDS - featureTimeSpentSec);
 const formatQualityCountdown = () => formatCountdown(QUALITY_TIMEOUT_SECONDS - qualityTimeSpentSec);
 const formatEvent1Countdown = () => formatCountdown(EVENT1_TIMEOUT_SECONDS - event1TimeSpentSec);
@@ -185,7 +218,7 @@ const startEvent1Timer = () => {
       clearInterval(event1TimerId);
       if (!event1Result) {
         event1Result = { passed: false, status: "failed", timeTakenSeconds: EVENT1_TIMEOUT_SECONDS };
-        event1Status = "15 minutes expired. Archive reconstruction failed. Event 2 opened with the supplied training data.";
+        event1Status = `${TEST_TIMER_ENABLED ? TEST_TIMER_SECONDS + " seconds" : "15 minutes"} expired. Archive reconstruction failed. Event 2 opened with the supplied training data.`;
         saveEvent1Result(event1Result).catch(() => {});
         highestStage = Math.max(highestStage, 1);
         setStage("manual");
@@ -200,10 +233,10 @@ const startManualTimer = () => {
   if (manualTimerId) clearInterval(manualTimerId);
   if (!manualTimerStart || manualTimerStart > Date.now()) manualTimerStart = Date.now();
   manualTimerId = setInterval(() => {
-    manualTimeSpentSec = Math.min(15 * 60, Math.max(0, Math.floor((Date.now() - manualTimerStart) / 1000)));
+    manualTimeSpentSec = Math.min(MANUAL_TIMEOUT_SECONDS, Math.max(0, Math.floor((Date.now() - manualTimerStart) / 1000)));
     updateChrome();
     if (manualTimeSpentSec % 5 === 0) checkpoint();
-    if (manualTimeSpentSec >= 15 * 60) {
+    if (manualTimeSpentSec >= MANUAL_TIMEOUT_SECONDS) {
       clearInterval(manualTimerId);
       if (!manualLocked) {
         manualStatus = "Time expired. Event 2 was auto-locked. Wait for the host to open the next stage.";
@@ -292,9 +325,10 @@ function setStage(next) {
   stage = next; if (stage === "event1" && !event1Result) event1TimerStart = event1TimerStart || Date.now(); if (stage === "manual" && !manualResult) manualTimerStart = manualTimerStart || Date.now(); if (stage === "features" && !featureResult) featureTimerStart = featureTimerStart || Date.now(); if (stage === "quality" && !qualityResult) qualityTimerStart = qualityTimerStart || Date.now(); if (stage === "forecast") forecastTimerStart = forecastTimerStart || Date.now(); checkpoint(); render(); if (stage === "event1") startEvent1Timer(); if (stage === "manual") startManualTimer(); if (stage === "features") startFeatureTimer(); if (stage === "quality") startQualityTimer(); if (stage === "forecast") startForecastTimer(); window.scrollTo({ top: 0, behavior: "smooth" });
 }
 function updateChrome() {
-  featureCredit.textContent = `${analysisCredits} / 10`;
-  const spent = repairSpend(); repairCredit.textContent = `${event4CreditsRemaining()} / ${REPAIR_BUDGET}`;
-  evaluationCredit.textContent = `${event4CreditsRemaining()} Event 4 CR`;
+  if (featureCredit) featureCredit.textContent = `${analysisCredits} / 10`;
+  const spent = repairSpend();
+  if (repairCredit) repairCredit.textContent = `${event4CreditsRemaining()} / ${REPAIR_BUDGET}`;
+  if (evaluationCredit) evaluationCredit.textContent = `${event4CreditsRemaining()} Event 4 CR`;
   if (stageTimers) { const [timerLabel, readTimer] = stageTimerReaders[stage] || ["E4–5", formatForecastCountdown]; stageTimers.innerHTML = `<span class="stage-timer-label">${timerLabel}</span><span class="stage-timer-value">${readTimer()}</span>`; }
   document.querySelectorAll("[data-stage]").forEach(button => { const index = stageOrder.indexOf(button.dataset.stage); button.classList.toggle("active", button.dataset.stage === stage); button.classList.toggle("is-active", button.dataset.stage === stage); button.disabled = index > highestStage || !stageIsUnlocked(button.dataset.stage); });
 }
@@ -343,7 +377,31 @@ function renderManual() {
 function findingHtml(item) {
   const result = item.result;
   if (result.kind === "classprofiles") return `<article class="finding"><header><b>${esc(featureName(result.feature))}</b><span>class profiles</span></header><table class="analysis-table"><thead><tr><th>Observed class</th><th>Count</th><th>Missing %</th><th>Mean</th><th>Std dev</th></tr></thead><tbody>${result.classes.map(row => `<tr><th>${esc(row.label)}</th><td>${row.count}</td><td>${number(row.missingPct)}</td><td>${number(row.mean)}</td><td>${number(row.stdDev)}</td></tr>`).join("")}</tbody></table></article>`;
-  if (result.kind === "correlation") return `<article class="finding"><header><b>All ${result.features.length} channels</b><span>correlation matrix</span></header><div class="matrix-scroll"><table class="matrix-table"><thead><tr><th></th>${result.features.map(name => `<th>${esc(featureName(name))}</th>`).join("")}</tr></thead><tbody>${result.features.map((name, i) => `<tr><th>${esc(featureName(name))}</th>${result.matrix[i].map(value => `<td>${number(value)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></article>`;
+  if (result.kind === "correlation") {
+    const pairs = [];
+    result.matrix.forEach((row, i) => row.forEach((value, j) => {
+      if (j <= i) return;
+      const numeric = Number(value) || 0;
+      pairs.push({ value: numeric, a: result.features[i], b: result.features[j] });
+    }));
+    pairs.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+    const strongest = pairs.slice(0, 3);
+    const cells = result.matrix.map((row, i) => row.map((value, j) => {
+      const numeric = Number(value) || 0;
+      const diagonal = i === j;
+      const abs = Math.min(1, Math.abs(numeric));
+      const alpha = (0.10 + abs * 0.52).toFixed(2);
+      const kind = diagonal ? "corr-diagonal" : numeric >= 0 ? "corr-positive" : "corr-negative";
+      const label = `${featureName(result.features[i])} × ${featureName(result.features[j])}: ${number(numeric)}`;
+      return `<td class="${kind}" style="--corr-alpha:${alpha}" data-row="${i}" data-col="${j}" title="${esc(label)}"><span>${number(numeric)}</span></td>`;
+    }).join(""));
+    return `<article class="finding correlation-finding">
+      <header><div><b>Correlation matrix</b><small>Pairwise Pearson correlation across ${result.features.length} telemetry channels</small></div></header>
+      <div class="matrix-summary">${strongest.map(pair => `<div><small>STRONGEST RELATIONSHIP</small><b>${esc(featureName(pair.a))} <i>×</i> ${esc(featureName(pair.b))}</b><strong class="${pair.value >= 0 ? "positive" : "negative"}">${number(pair.value)}</strong></div>`).join("")}</div>
+      <div class="matrix-toolbar"><div class="matrix-legend"><span><i class="legend-dot neutral"></i>Correlation values shown numerically</span></div><span class="matrix-hint">Hover a cell to inspect · scroll to explore all channels</span></div>
+      <div class="matrix-scroll"><table class="matrix-table" aria-label="Interactive correlation matrix"><thead><tr><th class="matrix-corner">CHANNEL</th>${result.features.map(name => `<th title="${esc(featureName(name))}">${esc(featureName(name))}</th>`).join("")}</tr></thead><tbody>${result.features.map((name, i) => `<tr><th title="${esc(featureName(name))}">${esc(featureName(name))}</th>${cells[i]}</tr>`).join("")}</tbody></table></div>
+    </article>`;
+  }
   return `<article class="finding"><header><b>${esc(featureName(result.feature))} × ${esc(featureName(result.secondFeature))}</b><span>relationship</span></header><div class="relationship-score">Pearson correlation <strong>${number(result.coefficient)}</strong></div><div class="bin-chart">${result.bins.map(bin => `<div><span>${number(bin.from)}–${number(bin.to)}</span><i><em style="width:${Math.min(100, Math.abs(bin.mean || 0))}%"></em></i><b>${number(bin.mean)}</b></div>`).join("")}</div></article>`;
 }
 
@@ -528,15 +586,15 @@ function bind() {
   const emergency = document.querySelector("#toggle-emergency"); if (emergency) emergency.onclick = () => { if (emergencyFeed) return; if (event4CreditsRemaining() < EMERGENCY_REPAIR_COST) { qualityStatus = `The Emergency Feed costs ${EMERGENCY_REPAIR_COST} credits, but only ${event4CreditsRemaining()} Event 4 credits remain.`; render(); return; } if (window.confirm(`The Emergency Feed will spend ${EMERGENCY_REPAIR_COST} Event 4 credits. Continue?`)) { emergencyFeed = true; qualityStatus = `Emergency feed selected. Generate a notebook to download it.`; render(); } };
   document.querySelectorAll("[data-repair-kind]").forEach(button => button.onclick = () => toggleRepair(button.dataset.repairKind, button.dataset.repairId));
   document.querySelectorAll("[data-repair-method]").forEach(select => select.onchange = () => { repairMethods[select.dataset.repairMethod][select.dataset.repairId] = select.value; checkpoint(); });
-  document.querySelectorAll("[data-model]").forEach(button => button.onclick = () => { model = button.dataset.model; hyperparameters[model] ||= Object.fromEntries(Object.entries(modelCatalog[model].parameters).map(([name, options]) => [name, [options[0][0]]])); kaggleScript = ""; download.disabled = true; forecastStatus = ""; render(); });
-  document.querySelectorAll("[data-hyperparameter]").forEach(select => select.onchange = () => { const options = modelCatalog[model].parameters[select.dataset.hyperparameter]; const values = [...select.selectedOptions].map(option => option.value === "__null__" ? null : option.value).map(value => options.find(([candidate]) => String(candidate) === String(value))?.[0] ?? value); hyperparameters[model] = { ...(hyperparameters[model] || {}), [select.dataset.hyperparameter]: values.length ? values : [options[0][0]] }; kaggleScript = ""; download.disabled = true; forecastStatus = ""; render(); });
+  document.querySelectorAll("[data-model]").forEach(button => button.onclick = () => { model = button.dataset.model; hyperparameters[model] ||= Object.fromEntries(Object.entries(modelCatalog[model].parameters).map(([name, options]) => [name, [options[0][0]]])); kaggleScript = ""; forecastStatus = ""; render(); });
+  document.querySelectorAll("[data-hyperparameter]").forEach(select => select.onchange = () => { const options = modelCatalog[model].parameters[select.dataset.hyperparameter]; const values = [...select.selectedOptions].map(option => option.value === "__null__" ? null : option.value).map(value => options.find(([candidate]) => String(candidate) === String(value))?.[0] ?? value); hyperparameters[model] = { ...(hyperparameters[model] || {}), [select.dataset.hyperparameter]: values.length ? values : [options[0][0]] }; kaggleScript = ""; forecastStatus = ""; render(); });
   const tuningTrials = document.querySelector("#tuning-trials"), tuningFolds = document.querySelector("#tuning-folds"), tuningSeed = document.querySelector("#tuning-seed");
-  [tuningTrials, tuningFolds, tuningSeed].filter(Boolean).forEach(input => input.onchange = () => { tuning = normalizeTuning({ trials: tuningTrials.value, folds: tuningFolds.value, randomState: tuningSeed.value }); kaggleScript = ""; download.disabled = true; forecastStatus = ""; render(); });
+  [tuningTrials, tuningFolds, tuningSeed].filter(Boolean).forEach(input => input.onchange = () => { tuning = normalizeTuning({ trials: tuningTrials.value, folds: tuningFolds.value, randomState: tuningSeed.value }); kaggleScript = ""; forecastStatus = ""; render(); });
   const generateKaggle = document.querySelector("#generate-kaggle"); if (generateKaggle) generateKaggle.onclick = async () => { if (forecastLocked) { forecastStatus = "The combined handoff timer has expired. Notebook generation is locked."; render(); return; } const parameters = hyperparameters[model] || Object.fromEntries(Object.entries(modelCatalog[model].parameters).map(([name, options]) => [name, [options[0][0]]])); const parameterCost = Object.entries(modelCatalog[model].parameters).reduce((sum, [name, options]) => sum + options.filter(([value]) => (Array.isArray(parameters[name]) ? parameters[name] : [parameters[name]]).some(candidate => String(candidate) === String(value))).reduce((subtotal, [, cost]) => subtotal + cost, 0), 0); const runCost = 1 + parameterCost; if (event4CreditsRemaining() < runCost) { forecastStatus = `That run costs ${runCost} credits; ${event4CreditsRemaining()} Event 4 credits remain.`; render(); return; } generateKaggle.disabled = true; try { const currentQuality = await request("/api/quality", { room: session.room, player: session.player, action: "seal", featureState, emergencyFeed, repairs: Object.fromEntries(Object.entries(repairs).map(([key, value]) => [key, [...value]])), missingMethods: repairMethods.missing, outlierMethods: repairMethods.outlier }); const finalRepairs = currentQuality.emergencyFeed ? {} : Object.fromEntries(Object.entries(repairs).map(([key, value]) => [key, [...value]])); tuning = normalizeTuning({ ...tuning, hyperparameters: parameters, repairMethods }); kaggleScript = buildKaggleScript({ model, features: currentQuality.features, emergencyFeed: Boolean(currentQuality.emergencyFeed), repairs: finalRepairs, tuning: { ...tuning, hyperparameters: parameters, repairMethods }, notebook: true }); forecastRuns = [{ model, cost: runCost, parameters, createdAt: Date.now() }, ...forecastRuns]; const url = URL.createObjectURL(new Blob([kaggleScript], { type: "application/x-ipynb+json" })), link = document.createElement("a"); link.href = url; link.download = kaggleFilename(model, "ipynb"); link.click(); URL.revokeObjectURL(url); qualityState = currentQuality.qualityState; qualityResult = null; kaggleScript = ""; forecastStatus = `${kaggleFilename(model, "ipynb")} downloaded. Repair selections remain editable.`; checkpoint(); render(); } catch (error) { forecastStatus = error.message; render(); } };
   const submitEvent4Button = document.querySelector("#submit-event4"); if (submitEvent4Button) submitEvent4Button.onclick = async () => { submitEvent4Button.disabled = true; try { await submitEvent4(); } catch (error) { forecastStatus = error.message; render(); } };
 }
 
-download.onclick = () => { if (!kaggleScript) return; try { JSON.parse(kaggleScript); const url = URL.createObjectURL(new Blob([kaggleScript], { type: "application/x-ipynb+json" })), link = document.createElement("a"); link.href = url; link.download = kaggleFilename(model, "ipynb"); link.click(); URL.revokeObjectURL(url); } catch { forecastStatus = "The generated notebook JSON is invalid and was not downloaded."; render(); } };
+
   document.querySelectorAll("[data-stage]").forEach(button => button.onclick = () => setStage(button.dataset.stage));
 window.addEventListener("beforeunload", () => checkpoint());
 setInterval(() => checkpoint(), 5000);
