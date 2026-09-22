@@ -92,3 +92,88 @@
 .round4-lab .r4-finish label { display: flex; gap: 10px; align-items: center; font-size: 12px; margin-top: 20px; }
 @media (max-width: 1250px) { .round4-lab .r4-models { grid-template-columns: repeat(2, minmax(0, 1fr)); } .round4-lab .r4-roadmap small { display: none; } }
 @media (max-width: 760px) { .round4-lab .r4-hero { flex-direction: column; align-items: flex-start; padding: 24px; } .round4-lab .r4-clock { text-align: left; } .round4-lab .r4-wallets, .round4-lab .r4-workbench, .round4-lab .r4-repairs { grid-template-columns: 1fr; } .round4-lab .r4-wallets { gap: 10px; } .round4-lab .r4-wallets > div { padding: 18px; } .round4-lab .r4-panel { padding: 20px; } .round4-lab .r4-heading, .round4-lab .r4-finish { flex-direction: column; align-items: flex-start; } .round4-lab .r4-run-summary { position: static; } .round4-lab .r4-roadmap { flex-direction: column; } .round4-lab .r4-models { grid-template-columns: 1fr; } .round4-lab summary span { float: none; display: block; margin-top: 8px; } }
+
+/* Round 4 light theme. The round has its own visual system, so it needs an
+   explicit light palette instead of inheriting the dark hard-coded surfaces. */
+:root[data-theme="light"] .round4-lab {
+  --r4-accent: #237a4b;
+  --r4-muted: #657184;
+  --r4-line: #d7dee7;
+  color: #17202b;
+}
+:root[data-theme="light"] .round4-lab .r4-hero {
+  border-color: #c6ddd0;
+  background: radial-gradient(ellipse at 80% 0%, #e7f5ec 0%, #f4faf6 42%, #ffffff 82%);
+}
+:root[data-theme="light"] .round4-lab .r4-hero p,
+:root[data-theme="light"] .round4-lab .r4-clock small { color: #536174; }
+:root[data-theme="light"] .round4-lab .r4-wallets > div,
+:root[data-theme="light"] .round4-lab .r4-panel {
+  background: #ffffff;
+  border-color: var(--r4-line);
+  box-shadow: 0 10px 28px rgba(35, 53, 75, .07);
+}
+:root[data-theme="light"] .round4-lab .r4-pill {
+  border-color: #c7d0db;
+  color: #536174;
+  background: #f7f9fb;
+}
+:root[data-theme="light"] .round4-lab .r4-repair-group { border-color: var(--r4-line); }
+:root[data-theme="light"] .round4-lab .r4-repair {
+  background: #f7f9fb;
+  border-color: #e3e8ee;
+}
+:root[data-theme="light"] .round4-lab .r4-repair.selected {
+  background: #eef8f1;
+  border-color: #76a98a;
+}
+:root[data-theme="light"] .round4-lab select,
+:root[data-theme="light"] .round4-lab input[type=number] {
+  color: #17202b;
+  background: #ffffff;
+  border-color: #b9c4d0;
+}
+:root[data-theme="light"] .round4-lab .r4-model {
+  background: #ffffff;
+  border-color: #d2d9e2;
+  color: #17202b;
+}
+:root[data-theme="light"] .round4-lab .r4-model:hover {
+  border-color: #75a489;
+  background: #f3faf5;
+}
+:root[data-theme="light"] .round4-lab .r4-model.selected {
+  border-color: var(--r4-accent);
+  background: #eaf6ee;
+  box-shadow: inset 0 0 0 1px var(--r4-accent);
+}
+:root[data-theme="light"] .round4-lab .r4-model > span,
+:root[data-theme="light"] .round4-lab .r4-model > small,
+:root[data-theme="light"] .round4-lab .r4-range-values,
+:root[data-theme="light"] .round4-lab dt,
+:root[data-theme="light"] .round4-lab .r4-run-summary > small,
+:root[data-theme="light"] .round4-lab .r4-status { color: #536174; }
+:root[data-theme="light"] .round4-lab .r4-presets button {
+  border-color: #b9d1c2;
+  color: #245d3d;
+  background: #eef8f1;
+}
+:root[data-theme="light"] .round4-lab .r4-presets button:hover { background: #e2f2e7; }
+:root[data-theme="light"] .round4-lab .r4-run-summary {
+  border-color: #9fc2aa;
+  background: #eef8f1;
+}
+:root[data-theme="light"] .round4-lab dl > div { border-bottom-color: #cfdfd4; }
+:root[data-theme="light"] .round4-lab .btn--primary {
+  background: var(--r4-accent);
+  border-color: var(--r4-accent);
+  color: #ffffff;
+}
+:root[data-theme="light"] .round4-lab .btn--ghost {
+  background: #ffffff;
+  border-color: #b9c4d0;
+  color: #2d3c4d;
+}
+:root[data-theme="light"] .round4-lab .r4-empty { border-color: #c8d1dc; }
+:root[data-theme="light"] .round4-lab .r4-history th,
+:root[data-theme="light"] .round4-lab .r4-history td { border-bottom-color: #dde3ea; }
