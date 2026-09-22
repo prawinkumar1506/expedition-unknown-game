@@ -12,12 +12,12 @@ export function kaggleFilename(model, extension = "ipynb") {
 }
 const pythonJSON = value => `json.loads(${JSON.stringify(JSON.stringify(value))})`;
 
-export function buildKaggleScript({ model, features, emergencyFeed = false, repairs = {}, tuning = {}, notebook = false }) {
+export function buildKaggleScript({ model, features, repairs = {}, tuning = {}, notebook = false }) {
   const plan = searchPlan(model, tuning.ranges);
   const settings = normalizeTuning(tuning);
   if (!Array.isArray(features) || features.length !== 10 || new Set(features).size !== 10 || features.some(name => !/^[a-z][a-z0-9_]*$/i.test(name))) throw new Error("The notebook requires exactly ten locked features.");
   const selected = { missingColumns: [], outlierColumns: [] }, methods = { missing: {}, outlier: {} };
-  if (!emergencyFeed) for (const [kind, key, allowed, fallback] of [["missing", "missingColumns", ["median", "mean", "mode", "drop"], "median"], ["outlier", "outlierColumns", ["iqr_clip", "iqr_remove", "median_clip"], "iqr_clip"]]) {
+  for (const [kind, key, allowed, fallback] of [["missing", "missingColumns", ["median", "mean", "mode", "drop"], "median"], ["outlier", "outlierColumns", ["iqr_clip", "iqr_remove", "median_clip"], "iqr_clip"]]) {
     selected[key] = [...new Set(repairs[key] || [])];
     for (const name of selected[key]) {
       if (!features.includes(name)) throw new Error("Repairs must use locked features.");
@@ -36,8 +36,8 @@ TARGET_SECONDS = ${plan.targetSeconds}
 CV_FOLDS = ${plan.folds}
 RANDOM_STATE = ${settings.randomState}
 SEARCH_CREDITS = ${plan.cost}
-TRAIN_FILE = ${JSON.stringify(emergencyFeed ? "train_backup_10.csv" : "train_16.csv")}
-TEST_FILE = ${JSON.stringify(emergencyFeed ? "test_backup_10.csv" : "test_16.csv")}
+TRAIN_FILE = "train_16.csv"
+TEST_FILE = "test_16.csv"
 `;
   const classifier = MODEL_CATALOG[model].classifier;
   const code = configuration + TRAINING_CODE.replace("# SELECTED_CLASSIFIER", `classifier = ${classifier}`);

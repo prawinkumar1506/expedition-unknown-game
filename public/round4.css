@@ -41,10 +41,6 @@
 .round4-lab .r4-repair small { display: block; font-size: 11px; color: var(--r4-muted); margin-top: 5px; }
 .round4-lab select, .round4-lab input[type=number] { color: #edf4f5; background: #111d26; border: 1px solid #53626b; border-radius: 6px; padding: 9px; }
 .round4-lab .r4-repair select { width: 100%; margin-top: 12px; font-size: 12px; }
-.round4-lab .r4-emergency { margin-top: 12px; color: #d8c4a4; }
-.round4-lab .r4-emergency summary { padding-left: 0; }
-.round4-lab .r4-emergency p { font-size: 13px; line-height: 1.7; margin-bottom: 14px; }
-.round4-lab .r4-notice { padding: 16px; margin-top: 16px; border: 1px solid #a08e69; border-radius: 8px; }
 .round4-lab .r4-models { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .round4-lab .r4-model { appearance: none; background: #1e2a35; border: 1px solid #3c4a56; border-radius: 10px; padding: 18px; text-align: left; color: #edf4f5; display: flex; flex-direction: column; gap: 12px; cursor: pointer; transition: border-color .15s, background .15s; }
 .round4-lab .r4-model:hover { border-color: #79ad8a; background: #26362f; }

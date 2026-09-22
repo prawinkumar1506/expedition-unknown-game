@@ -25,7 +25,6 @@ import { MODEL_CATALOG } from './public/round4-config.js';
 import { buildKaggleScript } from './public/kaggle-export.js';
 const features = fs.readFileSync('data/traffic/train_16.csv','utf8').split('\\n')[0].trim().split(',').filter(key => !['event_id','label'].includes(key)).slice(0,10);
 const codes = Object.fromEntries(Object.entries(MODEL_CATALOG).map(([model, config]) => [model, buildKaggleScript({model, features, tuning: {ranges: Object.fromEntries(Object.keys(config.parameters).map(key => [key, 5]))}})]));
-const backup = JSON.parse(fs.readFileSync('data/traffic/backup_feature_list.json','utf8'));
 console.log(JSON.stringify({codes, features}));
 """
         result = subprocess.run(["node", "--input-type=module", "-e", script], cwd=ROOT, capture_output=True, text=True, check=True)

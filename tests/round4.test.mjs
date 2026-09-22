@@ -12,6 +12,7 @@ test("Round 4 exposes five ensemble and five regular models with proportional ti
   assert.equal(Object.keys(MODEL_CATALOG).length, 10);
   assert.equal(Object.values(MODEL_CATALOG).filter(config => config.kind === "ensemble").length, 5);
   assert.equal(Object.values(MODEL_CATALOG).filter(config => config.kind === "regular").length, 5);
+  assert.deepEqual(Object.keys(MODEL_CATALOG), ["Support Vector Machine", "Random Forest", "Soft Voting", "Decision Tree", "Logistic Regression", "Gradient Boosting", "K-Nearest Neighbors", "Stacked Ensemble", "Extra Trees", "SGD Classifier"]);
   for (const [name, config] of Object.entries(MODEL_CATALOG)) {
     let previous;
     for (let level = 1; level <= 5; level++) {
@@ -48,14 +49,12 @@ test("normalization cannot lower timed work below its floor and seed zero is pre
   assert.throws(() => buildKaggleScript({ model: "Random Forest", features, repairs: { missingColumns: ["not_locked"] } }), /locked/);
 });
 
-test("notebook repairs ignore stale methods on deselected columns and clear for emergency feed", () => {
+test("notebook repairs ignore stale methods on deselected columns", () => {
   const args = { model: "Extra Trees", features, repairs: { missingColumns: [features[0]] }, tuning: { repairMethods: { missing: { [features[0]]: "mode", [features[1]]: "drop" }, outlier: { [features[2]]: "iqr_remove" } } } };
   const configLine = buildKaggleScript(args).split("\n").find(line => line.startsWith("REPAIR_METHODS ="));
   assert.ok(configLine.includes("mode"));
   assert.ok(!configLine.includes("drop"));
   assert.ok(!configLine.includes("iqr_remove"));
-  const emergencyLine = buildKaggleScript({ ...args, emergencyFeed: true }).split("\n").find(line => line.startsWith("REPAIR_METHODS ="));
-  assert.ok(!emergencyLine.includes("mode"));
 });
 
 test("Round 4 API validates and seals actual selected repair methods", async () => {

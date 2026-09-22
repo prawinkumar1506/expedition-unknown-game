@@ -39,7 +39,7 @@ The active player flow uses the room and Event 2–4 routes; their state-changin
 | `api/labels.js` | `POST /api/labels` | Validates Manual Override labels, applies the ordered rules from `_event.js`, scores `correct − wrong`, and seals a `manual` state token. |
 | `api/analyze.js` | `POST /api/analyze` | Maintains an HMAC-signed 10-credit investigation ledger. Provides stats, missingness, class-wise summaries, correlation matrices, and pair relationship bins. Reopening purchased evidence is free; answer-revealing feature importance is intentionally absent. |
 | `api/features.js` | `POST /api/features` | Requires exactly ten distinct valid features, verifies the investigation ledger, computes the strong-channel/investigation score, and seals a `features` token. |
-| `api/quality.js` | `POST /api/quality` | Builds a room-specific repair plan from corruption logs, validates a 15-credit repair choice, scores repair effectiveness, and seals a `quality` token. The Emergency Feed accepts only locks with at most four strong channels, gives 0 Event 3 points and 35/100 Event 4 score, then substitutes the fixed backup tier. |
+| `api/quality.js` | `POST /api/quality` | Builds a room-specific repair plan from corruption logs, validates the selected repair choice, scores repair effectiveness, and seals a `quality` token using the team's locked features. |
 | `api/health.js` | `GET /api/health` | Minimal availability response with server timestamp. |
 | `api/camera.js` | legacy endpoint | Returns HTTP 410: Event 2 is tabular, not an image round. |
 | `api/recovery.js` | legacy endpoint | Returns HTTP 410: the earlier recovery event is outside the Events 2–5 scope. |
@@ -50,8 +50,8 @@ The active player flow uses the room and Event 2–4 routes; their state-changin
 
 1. `labels.js` produces a signed manual state.
 2. `analyze.js` produces a signed investigation ledger; `features.js` consumes it and produces a feature state.
-3. `quality.js` consumes the feature state and produces a quality state with selected repairs or the bounded backup feed.
-4. The browser passes the visible sealed features, repairs, backup choice, model, and tuning settings to `kaggle-export.js`. The generated cell—not Vercel—trains and evaluates the model.
+3. `quality.js` consumes the feature state and produces a quality state with the team's selected repairs and locked features.
+4. The browser passes the sealed features, repairs, model, and tuning settings to `kaggle-export.js`. The generated cell—not Vercel—trains and evaluates the model.
 
 ## Client modules
 
@@ -69,7 +69,7 @@ The active player flow uses the room and Event 2–4 routes; their state-changin
 
 ### Kaggle generator contract
 
-`buildKaggleScript()` receives the chosen model, ten sealed features, repair choices, Emergency Feed flag, and tuning settings. It writes a standalone Kaggle cell that:
+`buildKaggleScript()` receives the chosen model, ten sealed features, repair choices, and tuning settings. It writes a standalone Kaggle cell that:
 
 1. Locates the uploaded Event CSV files below `/kaggle/input`.
 2. Replays duplicate removal, label repair, missing-value handling, and outlier clipping from the sealed Event 4 plan.
@@ -86,10 +86,8 @@ The selected search spaces cover Decision Tree, Logistic Regression, K-Nearest N
 | --- | --- | --- |
 | `data/traffic/train_16.csv` | Events 3–5 / normal Kaggle path | 2,030 delivered damaged training rows with 16 telemetry features and labels. |
 | `data/traffic/test_16.csv` | Event 5 / normal Kaggle path | 500 clean test rows without labels. |
-| `data/traffic/train_backup_10.csv`, `test_backup_10.csv` | Emergency Feed / Kaggle path | Fixed clean 10-feature recovery tier. |
 | `data/traffic/feature_strength_table.csv` | Feature Hunt | Organizer strength grouping used to score the sealed ten-feature choice. |
 | `data/traffic/corruption_log.csv` | Quality Lab and generated Kaggle cell | Missing, outlier, label, and duplicate evidence plus original values for repairs. |
-| `data/traffic/backup_feature_list.json` | Emergency Feed | Canonical backup feature order. |
 | `data/traffic/generation_metadata.json` | Mission metadata | Source-package generation and injected-corruption counts. |
 | `data/traffic/train_clean_16.csv`, `test_truth.csv` | local evaluator / organizer reference | Canonical train archive and final labels. They are not served by an HTTP route. For a real public competition, keep them out of the public repository and use an organizer-only scoring environment. |
 
@@ -107,9 +105,9 @@ The selected search spaces cover Decision Tree, Logistic Regression, K-Nearest N
 
 | Module | Coverage |
 | --- | --- |
-| `tests/game-phases.test.mjs` | Dataset shape, Manual Override scoring, signed analysis ledger, Feature Hunt lock, Quality Lab budget, bounded Emergency Feed, Kaggle cell generation, and retired camera behavior. |
+| `tests/game-phases.test.mjs` | Dataset shape, Manual Override scoring, signed analysis ledger, Feature Hunt lock, Quality Lab budget, Kaggle cell generation, and retired camera behavior. |
 | `tests/router.test.mjs` | Weighted rendezvous ordering and capacity guard behavior for the retained fleet router. |
-| `tests/test_ml_pipeline.py` | Local-only scikit-learn pipeline construction, reproducible five-fold diagnostics, submission shape, bounded Emergency Feed state, and HMAC tamper rejection. |
+| `tests/test_ml_pipeline.py` | Local-only scikit-learn pipeline construction, reproducible five-fold diagnostics, submission shape, and HMAC tamper rejection. |
 
 Run the active Node suite with `npm test`. To use the local evaluator, install `requirements-local.txt`, then run `python -m unittest discover -s tests -p "test_*.py" -v`.
 

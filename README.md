@@ -32,9 +32,7 @@ Teams spend at most 15 repair credits within their locked feature set:
 - Suspicious labels: 1 credit per record, maximum 6 records
 - Duplicate removal: 2 credits per group, maximum 4 groups
 
-The server applies the selected repairs to the supplied damaged archive and seals a scored repair plan.
-
-After Event 3, only teams that locked **four or fewer strong channels** can choose the Emergency Telemetry Feed. It irreversibly swaps both train and test to the supplied clean 10-channel backup pair, forfeits all Event 3 points, limits Event 4 to 35/100, and caps the final-model component at 70/100. The fixed 6-strong + 4-weak mix is a breakout route for a failed feature lock, not a route to a winning score: even perfect Event 2 and evaluation-efficiency results can produce at most 58/100 overall.
+The server applies the selected repairs to the supplied damaged archive and seals a scored repair plan. Teams keep the exact ten features they locked in Event 3; there is no fallback feature set in the final round.
 
 ### Event 5 — Kaggle Forecast Handoff
 
@@ -60,8 +58,7 @@ Upload the supplied traffic CSV files as a Kaggle Dataset before running the cel
 - `train_clean_16.csv`: organizer-side 2,000-row canonical archive
 - `test_16.csv`: clean 500-row hidden feed without labels
 - `test_truth.csv`: server-side final answer key
-- `train_backup_10.csv` and `test_backup_10.csv`: matching clean backup tier
-- corruption, feature-strength, backup-list, and generation metadata
+- corruption, feature-strength, and generation metadata
 
 Organizer truth files are not exposed by a public HTTP route. For a real competition, keep the repository/private deployment boundary appropriate so participants cannot read organizer assets from source control.
 

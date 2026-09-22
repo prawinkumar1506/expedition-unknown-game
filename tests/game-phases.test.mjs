@@ -29,11 +29,8 @@ test("the supplied package loads the exact event-scale train/test tiers", async 
   assert.equal(event.trainClean.length, event.trainDamaged.length);
   assert.equal(event.test.length, 500);
   assert.equal(event.features.length, 21);
-  assert.equal(event.backupFeatures.length, 10);
   assert.equal(event.manualRows.length, 50);
   assert.deepEqual(Object.keys(event.test[0]).filter(key => key !== "event_id"), event.features);
-  assert.deepEqual(Object.keys(event.testBackup[0]).filter(key => key !== "event_id"), event.backupFeatures);
-  assert.deepEqual(Object.keys(event.trainBackup[0]).filter(key => !["event_id", "label"].includes(key)), event.backupFeatures);
   assert.ok(event.test.every(row => !("label" in row)));
   assert.equal(mission.body.mission.scope, "Events 2–5");
   assert.deepEqual(mission.body.submissionSchema, ["event_id", "prediction"]);
@@ -125,16 +122,6 @@ test("Data Quality Lab enforces the 15-credit typed repair plan", async () => {
     assert.equal(flow.quality.sealed, true);
 });
 
-test("Emergency Feed is a low-score breakout route, not an alternate winning path", async () => {
-  const room = "400004", player = "rescue-team", event = assignment(room);
-  const strongLock = await invoke(featuresHandler, { room, player, features: event.features.slice(0, 10) });
-  const blocked = await invoke(qualityHandler, { room, player, action: "seal", featureState: strongLock.body.featureState, emergencyFeed: true, repairs: {} });
-  assert.equal(blocked.statusCode, 409); assert.match(blocked.body.error, /4 or fewer strong/i);
-  const poorLock = await invoke(featuresHandler, { room, player: "poor-lock", features: [...event.features.slice(0, 4), ...event.features.slice(-6)] });
-  const result = await invoke(qualityHandler, { room, player: "poor-lock", action: "seal", featureState: poorLock.body.featureState, emergencyFeed: true, repairs: {} });
-  assert.equal(result.statusCode, 200); assert.equal(poorLock.body.strongCount, 4); assert.equal(result.body.featureScore, 0); assert.equal(result.body.qualityScore, 35); assert.deepEqual(result.body.features, event.backupFeatures);
-});
-
 test("Event 4 reports credit spend and elapsed time in the sealed quality payload", async () => {
   const room = "400005", player = "quality-team";
   const event = assignment(room);
@@ -165,10 +152,6 @@ test("Round 4 generates timed model-search notebooks for the participant train/t
   assert.match(code, /randomized_search_results.csv/);
   assert.match(code, /best_model_evaluation.json/);
   assert.doesNotMatch(code, /test_truth|train_clean|time.sleep/);
-  const backup = buildKaggleScript({ model: "Stacked Ensemble", features: assignment("500005").backupFeatures, emergencyFeed: true, notebook: true });
-  assert.match(backup, /train_backup_10.csv/);
-  assert.match(backup, /test_backup_10.csv/);
-  assert.match(backup, /StackingClassifier/);
   assert.equal(kaggleFilename("Random Forest"), "random-forest-ensemble-search.ipynb");
   assert.equal(kaggleFilename("Logistic Regression"), "logistic-regression-regular-search.ipynb");
 });
