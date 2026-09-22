@@ -1,0 +1,162 @@
+:root {
+  --clearway-sans: "Inter", "Segoe UI", sans-serif;
+  --clearway-display: "Inter Tight", "Inter", "Segoe UI", sans-serif;
+  --clearway-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+  --clearway-copy: 14px;
+  --clearway-small: 12px;
+  --clearway-label: 11px;
+  --clearway-table: 12px;
+}
+
+html,
+body,
+button,
+input,
+select,
+textarea {
+  font-family: var(--clearway-sans);
+}
+
+body {
+  font-size: var(--clearway-copy);
+  line-height: 1.55;
+}
+
+.hero-sub,
+.host-card-note,
+.story-brief p,
+.blackbox-note p,
+.repair-incident > p,
+.tool-catalog > button span small,
+.analysis-config > div p,
+.finding-callout span,
+.finding > p,
+.inspect-note,
+.auth-aside-body p,
+.auth-card .sub,
+.stage-actions span,
+.feature-lock > span {
+  font-family: var(--clearway-sans);
+  font-size: var(--clearway-copy);
+  line-height: 1.6;
+}
+
+.eyebrow,
+.nav-label,
+.brand-tag,
+.panel-title,
+.panel-title span,
+.incident-ribbon small,
+.protocol-grid span,
+.story-beats span,
+.analysis-status,
+.analysis-config label,
+.analysis-config > div span,
+.finding > header span,
+.relationship-score,
+.feature-score span,
+.feature-score small,
+.inspect-section-label,
+.inspect-kv small,
+.inspect-title span,
+.inspector-select,
+.leaderboard-meta,
+.stage-pill,
+.field-label,
+.field-help {
+  font-family: var(--clearway-mono);
+  font-size: var(--clearway-label);
+  line-height: 1.45;
+}
+
+.panel-title,
+.panel-title span {
+  font-size: var(--clearway-small);
+}
+
+.tool-catalog > button span b,
+.analysis-config > div b,
+.finding > header b,
+.inspect-title b,
+.protocol-grid b,
+.incident-ribbon b {
+  font-family: var(--clearway-sans);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.analysis-config > div b {
+  font-size: 16px;
+}
+
+.tool-catalog > button span small {
+  margin-top: 7px;
+}
+
+.finding-callout span {
+  color: var(--t-muted, #98a2b3);
+}
+
+.finding-callout span b {
+  color: var(--t-base, #e5e7eb);
+  font-size: 14px;
+}
+
+.data-table,
+.analysis-table,
+.inspect-table {
+  font-family: var(--clearway-mono);
+  font-size: var(--clearway-table);
+  line-height: 1.45;
+}
+
+.data-table thead th,
+.analysis-table thead th,
+.inspect-table th {
+  font-size: var(--clearway-label);
+}
+
+.manual-table select,
+.analysis-config select,
+.inspector-select select,
+.input {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.pick .pick-name,
+.pick.feature > span:not(.pick-text),
+.model b,
+.card-title,
+.nav-link,
+.crumbs,
+.btn {
+  font-family: var(--clearway-sans);
+}
+
+.pick.feature span small,
+.model small,
+.model span,
+.protocol-grid small,
+.leaderboard-meta,
+.inspect-chip,
+.inspect-params {
+  font-size: var(--clearway-small);
+  line-height: 1.5;
+}
+
+.host-empty,
+.real-players,
+.inspect-kv strong {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  :root {
+    --clearway-copy: 14px;
+    --clearway-small: 12px;
+    --clearway-label: 11px;
+    --clearway-table: 12px;
+  }
+}

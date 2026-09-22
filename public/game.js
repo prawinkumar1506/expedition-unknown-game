@@ -51,6 +51,12 @@ const applyState = saved => {
   repairs = { missingColumns: new Set(saved.repairs?.missingColumns || []), outlierColumns: new Set(saved.repairs?.outlierColumns || []) }; repairMethods = saved.repairMethods || { missing: {}, outlier: {} };
   emergencyFeed = Boolean(saved.emergencyFeed); qualityState = saved.qualityState || ""; qualityResult = saved.qualityResult || null; model = saved.model || model; tuning = saved.tuning || tuning; hyperparameters = saved.hyperparameters || {}; forecastRuns = Array.isArray(saved.forecastRuns) ? saved.forecastRuns : []; kaggleScript = saved.kaggleScript || ""; forecastStatus = saved.forecastStatus || ""; forecastLocked = Boolean(saved.forecastLocked);
   const starts = saved.stageStartedAt || {}; event1TimerStart = Number(starts.event1 || 0); manualTimerStart = Number(starts.manual || 0); featureTimerStart = Number(starts.features || 0); qualityTimerStart = Number(starts.quality || 0); forecastTimerStart = Number(starts.forecast || 0);
+  // Recover from partially persisted stage transitions. A successfully sealed
+  // stage is stronger evidence than a stale highestStage counter.
+  if (event1Result) highestStage = Math.max(highestStage, 1);
+  if (manualResult || manualState) highestStage = Math.max(highestStage, 2);
+  if (featureResult && featureState) highestStage = Math.max(highestStage, 3);
+  if (qualityResult || qualityState) highestStage = Math.max(highestStage, 3);
 };
 const checkpoint = () => {
   const progress = serializeState();
@@ -66,7 +72,7 @@ const hydrate = room => {
   if (!stageIsUnlocked(stage)) stage = stageOrder.find(name => stageIsUnlocked(name)) || "event1";
   checkpoint();
 };
-const pollRoomControl = async () => { try { const result = await request("/api/room", { action: "get", pin: session.room, player: session.player }); const previousUnlocks = JSON.stringify(roomControl.stageUnlocks || {}); roomControl = result.room; if (previousUnlocks !== JSON.stringify(roomControl.stageUnlocks || {})) render(); } catch {} };
+const pollRoomControl = async () => { try { const result = await request("/api/room", { action: "get", pin: session.room, player: session.player }); const previousUnlocks = JSON.stringify(roomControl.stageUnlocks || {}); roomControl = result.room; if (featureResult && featureState) highestStage = Math.max(highestStage, 3); if (previousUnlocks !== JSON.stringify(roomControl.stageUnlocks || {})) render(); } catch {} };
 document.addEventListener("click", () => checkpoint());
 document.addEventListener("change", () => checkpoint());
 
@@ -310,7 +316,7 @@ function setStage(next) {
   const index = stageOrder.indexOf(next); if (index < 0 || index > highestStage || !stageIsUnlocked(next)) return;
   [event1TimerId, manualTimerId, featureTimerId, qualityTimerId, forecastTimerId].forEach(timerId => { if (timerId) clearInterval(timerId); });
   event1TimerId = manualTimerId = featureTimerId = qualityTimerId = forecastTimerId = null;
-  stage = next; if (stage === "event1" && !event1Result) event1TimerStart = event1TimerStart || Date.now(); if (stage === "manual" && !manualResult) manualTimerStart = manualTimerStart || Date.now(); if (stage === "features" && !featureResult) featureTimerStart = featureTimerStart || Date.now(); if (stage === "quality" && !qualityResult) qualityTimerStart = qualityTimerStart || Date.now(); if (stage === "forecast") forecastTimerStart = forecastTimerStart || Date.now(); checkpoint(); render(); if (stage === "event1") startEvent1Timer(); if (stage === "manual") startManualTimer(); if (stage === "features") startFeatureTimer(); if (stage === "quality") startQualityTimer(); if (stage === "forecast") startForecastTimer(); window.scrollTo({ top: 0, behavior: "smooth" });
+  stage = next; if (stage === "event1" && !event1Result) event1TimerStart = event1TimerStart || Date.now(); if (stage === "manual" && !manualResult) manualTimerStart = manualTimerStart || Date.now(); if (stage === "features" && !featureResult) featureTimerStart = featureTimerStart || Date.now(); if (stage === "quality" && !qualityResult) qualityTimerStart = qualityTimerStart || Date.now(); if (stage === "forecast") forecastTimerStart = forecastTimerStart || Date.now(); checkpoint(); render(); if (stage === "event1") startEvent1Timer(); if (stage === "manual") startManualTimer(); if (stage === "features") startFeatureTimer(); if (stage === "quality") { startQualityTimer(); if (!qualityPlan && featureState) request("/api/quality", { room: session.room, player: session.player, action: "plan", featureState }).then(result => { qualityPlan = result.plan; qualityStatus = "Event 4 loaded from your sealed Event 3 feature set."; checkpoint(); render(); }).catch(error => { qualityStatus = `Event 4 could not load the repair plan yet: ${error.message}`; render(); }); } if (stage === "forecast") startForecastTimer(); window.scrollTo({ top: 0, behavior: "smooth" });
 }
 function updateChrome() {
   featureCredit.textContent = `${analysisCredits} / 10`;
@@ -381,14 +387,27 @@ function renderFeatures() {
 const sealFeatureRound = async () => {
   if (featureResult) return;
   try {
-    featureResult = await request("/api/features", { room: session.room, player: session.player, features: [...selectedFeatures], analysisState });
-    featureState = featureResult.featureState;
-    const datasetSnapshot = await request("/api/dataset", { room: session.room, player: session.player, stage: "features", featureState });
-    featureStatus = `${featureResult.message} Working train/test datasets now contain only the ${datasetSnapshot.summary.features.length} locked channels.`;
-    await saveFeatureResult(featureResult);
+    const sealed = await request("/api/features", { room: session.room, player: session.player, features: [...selectedFeatures], analysisState });
+    featureResult = sealed;
+    featureState = sealed.featureState;
     highestStage = Math.max(highestStage, 3);
-    const planResponse = await request("/api/quality", { room: session.room, player: session.player, action: "plan", featureState });
-    qualityPlan = planResponse.plan;
+    featureStatus = sealed.message;
+    checkpoint();
+    render();
+    const followUps = await Promise.allSettled([
+      request("/api/dataset", { room: session.room, player: session.player, stage: "features", featureState }),
+      saveFeatureResult(sealed),
+      request("/api/quality", { room: session.room, player: session.player, action: "plan", featureState })
+    ]);
+    const datasetResult = followUps[0], scoreResult = followUps[1], planResult = followUps[2];
+    if (datasetResult.status === "fulfilled") featureStatus = `${sealed.message} Working train/test datasets now contain only the ${datasetResult.value.summary.features.length} locked channels.`;
+    if (planResult.status === "fulfilled") qualityPlan = planResult.value.plan;
+    const warnings = [];
+    if (datasetResult.status === "rejected") warnings.push("prepared-dataset preview will retry in Event 4");
+    if (scoreResult.status === "rejected") warnings.push("scoreboard sync failed temporarily");
+    if (planResult.status === "rejected") warnings.push("Event 4 repair plan will load when you enter it");
+    if (warnings.length) featureStatus = `${featureStatus} ${warnings.join("; ")}.`;
+    checkpoint();
     render();
   } catch (error) {
     featureStatus = error.message;
