@@ -32,9 +32,10 @@ function client({ elapsed = 0, completed = false, failSave = false } = {}) {
   vm.runInContext(source + `
     render = () => {};
     applyState({ stage: 'quality', stageStartedAt: { quality: ${now - elapsed * 1000} },
-      forecastRuns: [{cost: 8}], kaggleSubmitted: true,
+      forecastRuns: [{cost: 8, repairCost: 3}], kaggleSubmitted: true,
       qualityResult: {qualityScore: 75, repairSpend: 3, status: '${completed ? "COMPLETED" : "IN_PROGRESS"}', timeTakenSeconds: ${elapsed}} });
     globalThis.state = { submitEvent4, startQualityTimer, round4Closed, serializeState, formatQualityCountdown,
+      restore: applyState, repairCreditsRemaining: event4CreditsRemaining, searchCreditsRemaining,
       clock: () => qualityTimeSpentSec };
   `, context);
   return { ...context.state, calls, nodes };
@@ -62,6 +63,16 @@ test("Round 4 completion persists full elapsed time and credits before locking",
   restored.startQualityTimer();
   assert.equal(restored.formatQualityCountdown(), "28:20");
   assert.equal(restored.round4Closed(), true);
+});
+
+test("Round 4 repair and model wallets remain cumulative across downloaded experiments", () => {
+  const session = client({ elapsed: 100 });
+  session.restore({ stage: "quality", stageStartedAt: { quality: 9_900_000 }, forecastRuns: [
+    { cost: 19, repairCost: 12 },
+    { cost: 19, repairCost: 12 }
+  ] });
+  assert.equal(session.repairCreditsRemaining(), 26);
+  assert.equal(session.searchCreditsRemaining(), 112);
 });
 
 test("Round 4 remains retryable if score persistence fails", async () => {

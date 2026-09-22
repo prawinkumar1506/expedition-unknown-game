@@ -1,5 +1,5 @@
 // The Round 4 UI and exported notebook share this catalog and pricing policy.
-export const ROUND4 = Object.freeze({ durationSeconds: 90 * 60, minimumSeconds: 60 * 60, repairBudget: 50, searchBudget: 190 });
+export const ROUND4 = Object.freeze({ durationSeconds: 90 * 60, minimumSeconds: 60 * 60, repairBudget: 50, searchBudget: 150 });
 const parameter = (label, values) => ({ label, values });
 export const MODEL_CATALOG = {
   "Random Forest": { family: "Bagging", description: "Balanced bootstrapped trees. A strong starting point for noisy telemetry.", classifier: "RandomForestClassifier(random_state=RANDOM_STATE, n_jobs=1, class_weight='balanced_subsample')", parameters: {

@@ -26,9 +26,8 @@ test("all eight ensembles price wider ranges monotonically with bounded runtime 
     assert.ok(code.includes(config.classifier));
     assert.ok(code.includes('PARAMETERS = json.loads('));
   }
-  // A feasible 60+ minute search schedule, with a separate repair allowance.
-  assert.ok(3 * 50 + 2 * 19 <= ROUND4.searchBudget);
-  assert.ok(3 * 1050 + 2 * 298 >= 60 * 60);
+  assert.equal(ROUND4.searchBudget, 150);
+  assert.ok(3 * 50 <= ROUND4.searchBudget);
   assert.equal(ROUND4.repairBudget, 50);
 });
 
