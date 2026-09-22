@@ -1,0 +1,241 @@
+/* Clearway Phase 2 — game-feel / interaction layer */
+:root{--game-glow:color-mix(in srgb,var(--cyan) 28%,transparent)}
+.game-workspace{position:relative}
+.game-workspace.phase-enter{animation:stage-in .48s cubic-bezier(.2,.8,.2,1)}
+.game-workspace.phase-exit{animation:stage-out .18s ease both}
+@keyframes stage-in{from{opacity:0;transform:translateY(18px) scale(.985);filter:blur(2px)}to{opacity:1;transform:none;filter:none}}
+@keyframes stage-out{to{opacity:0;transform:translateY(-8px)}}
+/* Progress HUD */
+.clearway-hud{display:grid;grid-template-columns:auto minmax(160px,1fr) auto;gap:14px;align-items:center;margin:-4px 0 18px;padding:10px 13px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--panel) 94%,transparent);box-shadow:0 8px 30px #0000000d;backdrop-filter:blur(10px)}
+.clearway-hud .hud-label{font:700 9px 'JetBrains Mono',monospace;letter-spacing:.12em;color:var(--muted);text-transform:uppercase}.clearway-hud .hud-track{height:7px;border-radius:99px;background:var(--line);overflow:hidden}.clearway-hud .hud-fill{height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,var(--cyan),var(--blue));box-shadow:0 0 16px var(--game-glow);transition:width .7s cubic-bezier(.2,.8,.2,1)}.clearway-hud .hud-step{font:700 10px 'JetBrains Mono',monospace;color:var(--text);white-space:nowrap}
+/* interactive cards */
+.game-workspace button:not(:disabled),.game-workspace select{transition:transform .18s ease,box-shadow .2s ease,border-color .2s ease,background .2s ease}.game-workspace button:not(:disabled):hover{transform:translateY(-2px)}.game-workspace button:not(:disabled):active{transform:translateY(1px) scale(.985)}
+.pick.feature,.model,.tool-catalog>button,.repair-card,.class-grid button{position:relative;overflow:hidden}.pick.feature:after,.model:after,.tool-catalog>button:after{content:"";position:absolute;inset:-50%;background:radial-gradient(circle,var(--game-glow),transparent 58%);opacity:0;transform:scale(.65);transition:.3s ease;pointer-events:none}.pick.feature:hover:after,.model:hover:after,.tool-catalog>button:hover:after{opacity:.7;transform:scale(1)}
+.pick.feature.chosen,.model.selected,.class-grid button.selected{box-shadow:0 0 0 1px var(--cyan),0 10px 28px var(--game-glow),inset 0 0 24px var(--game-glow);animation:selected-pop .28s ease}.pick.feature.chosen:before,.model.selected:before{content:"✓";position:absolute;right:9px;top:7px;z-index:2;display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--cyan);color:#081210;font:800 11px Inter;animation:check-pop .35s cubic-bezier(.2,1.5,.4,1)}
+@keyframes selected-pop{50%{transform:translateY(-4px) scale(1.012)}}@keyframes check-pop{from{transform:scale(0)}to{transform:scale(1)}}
+/* Help text behaves like an explorable tooltip/card */
+.model small,.tool-catalog>button small,.analysis-config p,.pick.feature small{transition:color .2s ease,transform .2s ease;transform-origin:left center}.model:hover small,.tool-catalog>button:hover small,.analysis-config>div:hover p,.pick.feature:hover small{color:var(--text);transform:scale(1.035)}
+.model:hover,.tool-catalog>button:hover{z-index:4}
+/* stage action callouts */
+.stage-actions{animation:action-arrive .45s ease both}.stage-actions .btn--primary:not(:disabled){box-shadow:0 0 0 0 var(--game-glow);animation:ready-pulse 2.2s ease-in-out infinite}.recovery-message.success{animation:success-in .5s ease both}
+@keyframes action-arrive{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}@keyframes ready-pulse{50%{box-shadow:0 0 0 8px transparent}}@keyframes success-in{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+/* stage story beats */
+.story-beats span{transition:.25s ease}.story-beats span.active{box-shadow:0 0 0 1px var(--cyan),0 0 20px var(--game-glow);transform:translateY(-1px)}.story-beats span.done{opacity:.85}
+/* ripple */
+.clearway-ripple{position:absolute;width:10px;height:10px;border-radius:50%;background:currentColor;opacity:.35;pointer-events:none;transform:translate(-50%,-50%) scale(0);animation:ripple .55s ease-out}.game-workspace button{isolation:isolate}.game-workspace button>*{position:relative;z-index:1}@keyframes ripple{to{transform:translate(-50%,-50%) scale(18);opacity:0}}
+/* Ambient mission grid */
+.game-workspace:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.16;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:44px 44px;mask-image:radial-gradient(circle at 65% 35%,#000 0,transparent 72%)}
+/* Focus ring for keyboard play */
+.game-workspace button:focus-visible,.game-workspace select:focus-visible{outline:2px solid var(--cyan);outline-offset:3px;box-shadow:0 0 0 6px var(--game-glow)}
+@media(max-width:650px){.clearway-hud{grid-template-columns:1fr auto}.clearway-hud .hud-track{grid-column:1/-1;grid-row:2}.clearway-hud .hud-label{font-size:8px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.001ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.001ms!important}}
+
+/* Expandable evidence viewer: click a matrix/table/chart to bring it forward. */
+.findings .finding {
+  cursor: zoom-in;
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.findings .finding:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--cyan) 65%, var(--line));
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--cyan) 12%, transparent);
+}
+.findings .finding::after {
+  content: 'CLICK TO EXPAND';
+  display: block;
+  padding: 7px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font: 700 9px 'JetBrains Mono', monospace;
+  letter-spacing: .1em;
+  text-align: right;
+}
+.clearway-evidence-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: rgba(3,7,13,.76);
+  backdrop-filter: blur(9px);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .2s ease, visibility .2s ease;
+}
+.clearway-evidence-backdrop.is-open { opacity: 1; visibility: visible; }
+.clearway-evidence-modal {
+  position: relative;
+  width: min(1500px, 96vw);
+  max-height: 92vh;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 30px 100px rgba(0,0,0,.45);
+  transform: translateY(18px) scale(.975);
+  transition: transform .25s cubic-bezier(.2,.8,.2,1);
+}
+.clearway-evidence-backdrop.is-open .clearway-evidence-modal { transform: none; }
+.clearway-evidence-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  backdrop-filter: blur(12px);
+}
+.clearway-evidence-head strong { font-size: 15px; }
+.clearway-evidence-head span { color: var(--muted); font: 9px 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: .1em; }
+.clearway-evidence-close {
+  width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 9px;
+  background: var(--bg-muted, var(--panel)); color: var(--text); cursor: pointer;
+  font-size: 20px; line-height: 1;
+}
+.clearway-evidence-close:hover { transform: rotate(3deg) scale(1.04); border-color: var(--cyan); }
+.clearway-evidence-body { padding: 20px; }
+.clearway-evidence-body .finding { cursor: default; border: 0; box-shadow: none; }
+.clearway-evidence-body .finding::after { display: none; }
+.clearway-evidence-body .matrix-scroll {
+  max-height: 68vh;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.clearway-evidence-body .matrix-table { min-width: 1120px; font-size: 12px; }
+.clearway-evidence-body .matrix-table th,
+.clearway-evidence-body .matrix-table td { min-width: 76px; padding: 11px 9px; }
+.clearway-evidence-body .matrix-table th { position: sticky; top: 0; z-index: 2; }
+.clearway-evidence-body .matrix-table th:first-child { left: 0; z-index: 4; }
+.clearway-evidence-body .matrix-table tbody th { left: 0; z-index: 3; }
+.clearway-evidence-body .matrix-table td span { font-size: 12px; }
+@media (max-width: 700px) {
+  .clearway-evidence-backdrop { padding: 10px; }
+  .clearway-evidence-modal { width: 100%; max-height: 96vh; }
+  .clearway-evidence-body { padding: 10px; }
+}
+
+/* Expanded evidence should actually feel expanded: use the viewport, increase
+   typography and give tables substantially more breathing room. */
+.clearway-evidence-modal {
+  width: min(1800px, 98vw);
+  max-height: 96vh;
+  border-radius: 18px;
+}
+.clearway-evidence-head {
+  padding: 22px 28px;
+}
+.clearway-evidence-head strong {
+  font-size: 22px;
+}
+.clearway-evidence-head span {
+  font-size: 11px;
+}
+.clearway-evidence-body {
+  padding: 30px;
+}
+.clearway-evidence-body .finding {
+  font-size: 1.25rem;
+}
+.clearway-evidence-body .finding > header {
+  padding: 20px 24px;
+}
+.clearway-evidence-body .finding > header b {
+  font-size: 21px;
+}
+.clearway-evidence-body .finding > header span {
+  font-size: 11px;
+}
+.clearway-evidence-body .analysis-table {
+  font-size: 16px !important;
+}
+.clearway-evidence-body .analysis-table th,
+.clearway-evidence-body .analysis-table td {
+  padding: 16px 18px;
+}
+.clearway-evidence-body .matrix-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.clearway-evidence-body .matrix-summary > div {
+  padding: 20px 22px;
+}
+.clearway-evidence-body .matrix-summary small {
+  font-size: 11px;
+}
+.clearway-evidence-body .matrix-summary b {
+  font-size: 16px;
+}
+.clearway-evidence-body .matrix-summary strong {
+  font-size: 20px;
+}
+.clearway-evidence-body .matrix-toolbar {
+  padding: 16px 22px;
+}
+.clearway-evidence-body .matrix-legend,
+.clearway-evidence-body .matrix-hint {
+  font-size: 11px;
+}
+.clearway-evidence-body .matrix-scroll {
+  max-height: 72vh;
+}
+.clearway-evidence-body .matrix-table {
+  min-width: 2500px;
+  font-size: 15px;
+}
+.clearway-evidence-body .matrix-table th,
+.clearway-evidence-body .matrix-table td {
+  min-width: 104px;
+  width: 104px;
+  height: 76px;
+  padding: 12px 10px;
+}
+.clearway-evidence-body .matrix-table thead th {
+  min-width: 122px;
+  width: 122px;
+  height: 112px;
+  font-size: 13px;
+}
+.clearway-evidence-body .matrix-table thead th:first-child,
+.clearway-evidence-body .matrix-table tbody th {
+  min-width: 220px;
+  width: 220px;
+}
+.clearway-evidence-body .matrix-table tbody th {
+  font-size: 13px;
+}
+.clearway-evidence-body .matrix-table td span {
+  font-size: 15px;
+}
+.clearway-evidence-body .relationship-score {
+  padding: 22px 24px;
+  font-size: 15px;
+}
+.clearway-evidence-body .relationship-score strong {
+  font-size: 24px;
+}
+.clearway-evidence-body .bin-chart {
+  padding: 18px 24px;
+}
+.clearway-evidence-body .bin-chart > div {
+  grid-template-columns: 240px minmax(120px, 1fr) 90px;
+  gap: 18px;
+  padding: 10px 0;
+  font-size: 14px;
+}
+@media (max-width: 900px) {
+  .clearway-evidence-body {
+    padding: 18px;
+  }
+  .clearway-evidence-body .matrix-summary {
+    grid-template-columns: 1fr;
+  }
+  .clearway-evidence-body .matrix-table {
+    min-width: 2100px;
+  }
+}

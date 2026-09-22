@@ -2,16 +2,21 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <script>document.documentElement.dataset.theme=localStorage.getItem('clearway-theme')||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark')</script>
   <title>SIGNAL LOST // Clearway Standby</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="/vendor/adminator/style.76ee5eee.css">
+  <link rel="stylesheet" href="/typography.css">
+  <link rel="stylesheet" href="/theme-ui.css">
+  <link rel="stylesheet" href="/site-phase2.css">
 </head>
 <body>
   <main class="content" style="max-width:960px;margin:7vh auto">
     <section class="hero"><div class="hero-text"><span class="eyebrow">OPERATION CLEARWAY · STANDBY</span><h1 class="hero-title">Await the <span class="accent">restoration signal.</span></h1><p id="lobby-status" class="hero-sub">Checking room status…</p></div></section>
     <section class="card"><div class="card-head"><div class="card-title-wrap"><span class="eyebrow">RESTORATION ROSTER</span><h2 class="card-title">Connected teams</h2></div></div><div id="lobby-players" class="real-players"></div></section>
   </main>
+  <script src="/theme.js"></script>
   <script src="/lobby.js"></script>
 </body>
 </html>

@@ -1,0 +1,13 @@
+:root[data-theme="light"]{--bg:#f5f7fa;--chrome:#ffffff;--sidebar:#f0f3f7;--panel:#ffffff;--panel2:#f5f7fa;--line:#dbe1e8;--line2:#c5ced9;--text:#17202b;--muted:#657184;--cyan:#087f78;--green:#3f8c45;--amber:#9b6500;--red:#b44a42;--blue:#3d70b2;--shadow:0 18px 60px #25354a1c}
+:root[data-theme="light"] body{background:#e9edf3}
+:root[data-theme="light"] .d-sidebar,:root[data-theme="light"] .d-topbar{background:rgba(255,255,255,.92)}
+:root[data-theme="light"] .card,:root[data-theme="light"] .selection-board,:root[data-theme="light"] .tool-catalog,:root[data-theme="light"] .evidence-console{box-shadow:0 8px 30px #30445a12}
+:root[data-theme="light"] .hero:after{opacity:.35}
+:root[data-theme="light"] .tool-catalog>button,:root[data-theme="light"] .finding,:root[data-theme="light"] .finding>header,:root[data-theme="light"] .analysis-status,:root[data-theme="light"] .analysis-table thead,:root[data-theme="light"] .matrix-table th{background:#f3f6f9}
+:root[data-theme="light"] .tool-catalog>button:hover,:root[data-theme="light"] .tool-catalog>button.active{background:#e9f5f3}
+:root[data-theme="light"] .pick.feature,:root[data-theme="light"] .model,:root[data-theme="light"] .repair-card{background:#fff;color:var(--text)}
+:root[data-theme="light"] .pick.feature:hover,:root[data-theme="light"] .model:hover{background:#f5fbfa}
+:root[data-theme="light"] .theme-toggle{background:#eef2f6}
+html,body{transition:background-color .35s ease,color .35s ease}
+.theme-toggle-wrap{display:flex;align-items:center;margin-left:10px}.theme-toggle{display:flex;align-items:center;gap:6px;height:32px;padding:4px 8px;border:1px solid var(--line2);border-radius:999px;background:var(--panel2);color:var(--muted);cursor:pointer;transition:.25s ease;box-shadow:0 3px 12px #0001}.theme-toggle:hover{border-color:var(--cyan);transform:translateY(-1px)}.theme-track{position:relative;width:30px;height:16px;border-radius:99px;background:var(--line2);transition:.25s}.theme-knob{position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--text);transition:.28s cubic-bezier(.2,.8,.2,1)}.theme-toggle.is-light .theme-knob{left:16px;background:var(--amber)}.theme-icon{font-size:14px;line-height:1}.theme-icon.sun{color:var(--amber)}
+@media(max-width:650px){.theme-toggle-wrap{position:fixed;right:12px;top:12px;z-index:1000}.d-topbar .theme-toggle-wrap{position:static}}
