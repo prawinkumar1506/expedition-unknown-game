@@ -8,24 +8,29 @@ import qualityHandler from "../api/quality.js";
 import { verifyState } from "../api/_state.js";
 
 const features = assignment("round4-test").features.slice(0, 10);
-test("all eight ensembles price wider ranges monotonically with bounded runtime targets", () => {
-  assert.equal(Object.keys(MODEL_CATALOG).length, 8);
+test("Round 4 exposes five ensemble and five regular models with proportional time and credit budgets", () => {
+  assert.equal(Object.keys(MODEL_CATALOG).length, 10);
+  assert.equal(Object.values(MODEL_CATALOG).filter(config => config.kind === "ensemble").length, 5);
+  assert.equal(Object.values(MODEL_CATALOG).filter(config => config.kind === "regular").length, 5);
   for (const [name, config] of Object.entries(MODEL_CATALOG)) {
     let previous;
     for (let level = 1; level <= 5; level++) {
       const plan = searchPlan(name, Object.fromEntries(Object.keys(config.parameters).map(key => [key, level])));
-      assert.equal(plan.combinations, level ** 4);
+      assert.equal(plan.combinations, Object.values(plan.parameters).reduce((count, values) => count * values.length, 1));
       if (previous) { assert.ok(plan.cost > previous.cost); assert.ok(plan.targetSeconds > previous.targetSeconds); }
       previous = plan;
-      if (level === 1) { assert.equal(plan.cost, 8); assert.equal(plan.targetSeconds, 150); assert.equal(plan.folds, 3); }
-      if (level === 5) { assert.equal(plan.cost, 50); assert.equal(plan.targetSeconds, 1050); assert.equal(plan.folds, 5); }
+      if (level === 1 && config.kind === "ensemble") { assert.equal(plan.cost, 8); assert.equal(plan.targetSeconds, 150); assert.equal(plan.folds, 3); }
+      if (level === 1 && config.kind === "regular") { assert.equal(plan.cost, 5); assert.equal(plan.targetSeconds, 90); assert.equal(plan.folds, 3); }
     }
-    assert.equal(searchPlan(name).cost, 19);
-    assert.ok(Math.abs(searchPlan(name).targetSeconds - 300) < 5);
+    const full = searchPlan(name, Object.fromEntries(Object.keys(config.parameters).map(key => [key, 99])));
+    if (config.kind === "ensemble") { assert.equal(full.cost, 50); assert.equal(full.targetSeconds, 1050); }
+    else { assert.equal(full.cost, 28); assert.equal(full.targetSeconds, 570); }
     const code = buildKaggleScript({ model: name, features });
     assert.ok(code.includes(config.classifier));
     assert.ok(code.includes('PARAMETERS = json.loads('));
   }
+  assert.ok(570 >= 1050 / 2);
+  assert.ok(90 >= 150 / 2);
   assert.equal(ROUND4.searchBudget, 150);
   assert.ok(3 * 50 <= ROUND4.searchBudget);
   assert.equal(ROUND4.repairBudget, 50);
@@ -38,7 +43,7 @@ test("normalization cannot lower timed work below its floor and seed zero is pre
   assert.equal(plan.levels.min_samples_leaf, 5);
   assert.equal(plan.levels.max_features, 2);
   assert.equal(normalizeTuning({ randomState: 0 }).randomState, 0);
-  assert.throws(() => searchPlan("Decision Tree"), /eight/);
+  assert.throws(() => searchPlan("Unknown Model"), /ten/);
   assert.throws(() => buildKaggleScript({ model: "Random Forest", features: features.slice(0, 9) }), /ten/);
   assert.throws(() => buildKaggleScript({ model: "Random Forest", features, repairs: { missingColumns: ["not_locked"] } }), /locked/);
 });

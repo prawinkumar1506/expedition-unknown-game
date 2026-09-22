@@ -8,8 +8,11 @@ import pandas as pd
 import sklearn
 from sklearn.base import BaseEstimator, ClassifierMixin, clone
 from sklearn.ensemble import (RandomForestClassifier, ExtraTreesClassifier, GradientBoostingClassifier,
-    HistGradientBoostingClassifier, AdaBoostClassifier, BaggingClassifier, VotingClassifier, StackingClassifier)
-from sklearn.linear_model import LogisticRegression
+    HistGradientBoostingClassifier, VotingClassifier, StackingClassifier)
+from sklearn.linear_model import LogisticRegression, SGDClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import classification_report, f1_score

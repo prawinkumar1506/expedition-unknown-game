@@ -7,16 +7,13 @@ export function normalizeTuning(raw = {}) {
 }
 export function kaggleFilename(model, extension = "ipynb") {
   const slug = String(model).toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replaceAll(/^-|-$/g, "");
-  const legacy = new Set(["decision-tree", "logistic-regression", "k-nearest-neighbors", "support-vector-machine"]);
-  return `${slug}-${legacy.has(slug) ? "randomized" : "ensemble"}-search.${extension}`;
+  const kind = MODEL_CATALOG[model]?.kind || "model";
+  return `${slug}-${kind}-search.${extension}`;
 }
 const pythonJSON = value => `json.loads(${JSON.stringify(JSON.stringify(value))})`;
 
 export function buildKaggleScript({ model, features, emergencyFeed = false, repairs = {}, tuning = {}, notebook = false }) {
-  const legacySvm = model === "Support Vector Machine";
-  const plan = legacySvm
-    ? { parameters: { C: [0.1, 1, 10], gamma: ["scale", "auto"] }, targetSeconds: 150, folds: 3, cost: 8 }
-    : searchPlan(model, tuning.ranges);
+  const plan = searchPlan(model, tuning.ranges);
   const settings = normalizeTuning(tuning);
   if (!Array.isArray(features) || features.length !== 10 || new Set(features).size !== 10 || features.some(name => !/^[a-z][a-z0-9_]*$/i.test(name))) throw new Error("The notebook requires exactly ten locked features.");
   const selected = { missingColumns: [], outlierColumns: [] }, methods = { missing: {}, outlier: {} };
@@ -42,9 +39,7 @@ SEARCH_CREDITS = ${plan.cost}
 TRAIN_FILE = ${JSON.stringify(emergencyFeed ? "train_backup_10.csv" : "train_16.csv")}
 TEST_FILE = ${JSON.stringify(emergencyFeed ? "test_backup_10.csv" : "test_16.csv")}
 `;
-  const classifier = legacySvm
-    ? "SVC(kernel='rbf', probability=True, class_weight='balanced', random_state=RANDOM_STATE)"
-    : MODEL_CATALOG[model].classifier;
+  const classifier = MODEL_CATALOG[model].classifier;
   const code = configuration + TRAINING_CODE.replace("# SELECTED_CLASSIFIER", `classifier = ${classifier}`);
   if (!notebook) return code;
   return JSON.stringify({ nbformat: 4, nbformat_minor: 5,

@@ -1,4 +1,4 @@
-"""Execute exported Round 4 Python, including actual ensemble endpoints.
+"""Execute exported Round 4 Python, including actual ensemble and regular-model endpoints.
 
 The export smoke test reduces only the time budget to keep CI bounded.
 Production timing is checked separately with unmodified downloaded code.
@@ -46,7 +46,7 @@ console.log(JSON.stringify({codes, features}));
         finally:
             os.chdir(old_directory)
 
-    def test_all_eight_models_fit_at_both_real_slider_endpoints(self):
+    def test_all_ten_models_fit_at_both_real_slider_endpoints(self):
         for model, code in self.generated["codes"].items():
             with self.subTest(model=model):
                 # Load the actual export's data handling, repairs, classifier and typed ranges.
@@ -60,9 +60,6 @@ console.log(JSON.stringify({codes, features}));
                         predictions = estimator.predict(namespace["X_test"].iloc[:15])
                         self.assertEqual(len(predictions), 15)
                         self.assertTrue(set(predictions).issubset(set(y)))
-                        if model == "Bagged Trees" and endpoint == -1:
-                            self.assertEqual(estimator.classifier_._max_samples, len(X))
-                            self.assertEqual(estimator.classifier_._max_features, len(X.columns))
 
     def test_export_writes_three_valid_outputs_without_modifying_inputs(self):
         code = self.generated["codes"]["Random Forest"]

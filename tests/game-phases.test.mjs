@@ -153,7 +153,7 @@ test("Event 4 reports credit spend and elapsed time in the sealed quality payloa
   assert.equal(result.body.timeTakenSeconds, 273);
 });
 
-test("Round 4 generates ensemble notebooks for the participant train/test pair", () => {
+test("Round 4 generates timed model-search notebooks for the participant train/test pair", () => {
   const tuning = normalizeTuning({ randomState: 90210 });
   const notebook = JSON.parse(buildKaggleScript({ model: "Random Forest", features: assignment("500005").features.slice(0, 10), repairs: { missingColumns: ["vehicle_count"], outlierColumns: [] }, tuning, notebook: true }));
   const code = notebook.cells.find(cell => cell.cell_type === "code").source.join("");
@@ -170,6 +170,7 @@ test("Round 4 generates ensemble notebooks for the participant train/test pair",
   assert.match(backup, /test_backup_10.csv/);
   assert.match(backup, /StackingClassifier/);
   assert.equal(kaggleFilename("Random Forest"), "random-forest-ensemble-search.ipynb");
+  assert.equal(kaggleFilename("Logistic Regression"), "logistic-regression-regular-search.ipynb");
 });
 
 test("Round 4 lasts 90 minutes and completion opens after 60 minutes", async () => {
