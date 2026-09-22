@@ -1,5 +1,6 @@
 import { clean, json } from "./_gateway.js";
 import { assignment, hash } from "./_event.js";
+import { materializeDerivedRows } from "./_derived.js";
 import { packState, verifyState } from "./_state.js";
 
 const COSTS = { missing: 3, outlier: 3 };
@@ -12,18 +13,27 @@ export const EMERGENCY_MAX_STRONG_CHANNELS = 4;
 export const EMERGENCY_QUALITY_SCORE = 35;
 const unique = values => [...new Set(Array.isArray(values) ? values.map(value => String(value || "").slice(0, 64)) : [])];
 
-export function buildQualityPlan(event, features, room = "fixed") {
+export function buildQualityPlan(event, features, room = "fixed", derivedFeatures = []) {
   const logs = event.corruptionLog;
+  const derivedIds = new Set(derivedFeatures.map(item => item.id)), materialized = materializeDerivedRows(event.trainDamaged, derivedFeatures);
+  const countDerivedMissing = feature => materialized.filter(row => row[feature] === null || row[feature] === undefined || row[feature] === "" || !Number.isFinite(Number(row[feature]))).length;
+  const countDerivedOutliers = feature => {
+    const values = materialized.map(row => Number(row[feature])).filter(Number.isFinite).sort((a, b) => a - b);
+    if (values.length < 4) return 0;
+    const pick = q => { const p = (values.length - 1) * q, lo = Math.floor(p), hi = Math.ceil(p); return lo === hi ? values[lo] : values[lo] + (values[hi] - values[lo]) * (p - lo); };
+    const q1 = pick(0.25), q3 = pick(0.75), iqr = q3 - q1, low = q1 - 1.5 * iqr, high = q3 + 1.5 * iqr;
+    return values.filter(value => value < low || value > high).length;
+  };
   const countBy = problem => features.map(feature => ({
     feature,
-    issueCount: logs.filter(item => item.problem === problem && item.column === feature).length
+    issueCount: derivedIds.has(feature) ? (problem === "missing_value" ? countDerivedMissing(feature) : countDerivedOutliers(feature)) : logs.filter(item => item.problem === problem && item.column === feature).length
   })).sort((a, b) => b.issueCount - a.issueCount || a.feature.localeCompare(b.feature));
   const damagedById = new Map(event.trainDamaged.map(row => [row.event_id, row]));
   return {
     missingColumns: countBy("missing_value"),
     outlierColumns: countBy("outlier"),
-    missingMethods: ["median", "mean", "mode", "drop"],
-    outlierMethods: ["iqr_clip", "iqr_remove", "median_clip"],
+    missingMethods: ["median", "mean", "mode"],
+    outlierMethods: ["iqr_clip", "median_replace"],
     costs: COSTS,
     limits: LIMITS,
     budget: BUDGET
@@ -89,18 +99,18 @@ export default function handler(req, res) {
   if (!room || !player) return json(res, 400, { error: "Room and player are required." });
   try {
     const featureState = verifyState(req.body?.featureState, "features", room, player), event = assignment(room);
-    const plan = buildQualityPlan(event, featureState.selected, room);
+    const plan = buildQualityPlan(event, featureState.selected, room, featureState.derivedFeatures || []);
     const timeTakenSeconds = Number(req.body?.timeTakenSeconds || 0);
     if (action === "plan") return json(res, 200, { plan, lockedFeatures: featureState.selected, emergencyFeatures: event.backupFeatures });
     if (action !== "seal") return json(res, 400, { error: "Choose plan or seal." });
     const emergencyFeed = Boolean(req.body?.emergencyFeed);
     if (emergencyFeed) {
       if (featureState.strongCount > EMERGENCY_MAX_STRONG_CHANNELS) throw new Error(`Emergency Feed is available only after a failed Feature Hunt lock (${EMERGENCY_MAX_STRONG_CHANNELS} or fewer strong channels).`);
-      const qualityState = packState("quality", { room, player, features: event.backupFeatures, featureScore: 0, qualityScore: EMERGENCY_QUALITY_SCORE, emergencyFeed: true, repairs: { missingColumns: [], outlierColumns: [] }, methods: { missing: {}, outlier: {} }, repairSpend: EMERGENCY_REPAIR_COST, timeTakenSeconds });
+      const qualityState = packState("quality", { room, player, features: event.backupFeatures, derivedFeatures: [], featureScore: 0, qualityScore: EMERGENCY_QUALITY_SCORE, emergencyFeed: true, repairs: { missingColumns: [], outlierColumns: [] }, methods: { missing: {}, outlier: {} }, repairSpend: EMERGENCY_REPAIR_COST, timeTakenSeconds });
       return json(res, 200, { sealed: true, emergencyFeed: true, features: event.backupFeatures, featureScore: 0, qualityScore: EMERGENCY_QUALITY_SCORE, repairSpend: EMERGENCY_REPAIR_COST, repairBudget: BUDGET, timeTakenSeconds, qualityState, message: `Emergency Telemetry Feed locked. ${EMERGENCY_REPAIR_COST} repair credits were charged; Event 3 is forfeited and Event 4 is capped at 35/100.` });
     }
     const { repairs, methods, spend } = validateRepairs(plan, req.body?.repairs), qualityScore = scoreRepairPlan(plan, repairs);
-    const qualityState = packState("quality", { room, player, features: featureState.selected, featureScore: featureState.score, qualityScore, emergencyFeed: false, repairs, methods, repairSpend: spend, timeTakenSeconds });
+    const qualityState = packState("quality", { room, player, features: featureState.selected, derivedFeatures: featureState.derivedFeatures || [], featureScore: featureState.score, qualityScore, emergencyFeed: false, repairs, methods, repairSpend: spend, timeTakenSeconds });
     return json(res, 200, { sealed: true, emergencyFeed: false, features: featureState.selected, featureScore: featureState.score, qualityScore, repairSpend: spend, repairBudget: BUDGET, methods, timeTakenSeconds, qualityState, message: `Cleaning plan sealed: ${spend}/${BUDGET} repair credits spent, repair effectiveness ${qualityScore}/100.` });
   } catch (error) {
     const message = ["STATE_REQUIRED", "INVALID_STATE"].includes(error.message) ? "The Feature Hunt seal could not be verified. Reload the mission." : error.message;

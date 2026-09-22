@@ -6,6 +6,7 @@ import labelsHandler from "../api/labels.js";
 import analyzeHandler from "../api/analyze.js";
 import featuresHandler from "../api/features.js";
 import qualityHandler, { buildQualityPlan, scoreRepairPlan } from "../api/quality.js";
+import datasetHandler from "../api/dataset.js";
 import cameraHandler from "../api/camera.js";
 import recoveryHandler from "../api/recovery.js";
 import { buildKaggleScript, kaggleFilename, normalizeTuning } from "../public/kaggle-export.js";
@@ -109,8 +110,44 @@ test("Event 3 exposes only the three dynamic investigations and class profiles",
   const unrelated = await invoke(analyzeHandler, { room: "350007", player: "correlation-team-2", type: "correlation", feature: "vehicle_count", secondFeature: "rain_intensity_mmhr" });
   assert.equal(unrelated.body.result.evidence.strength, "little");
   assert.match(unrelated.body.result.explanation, /very little connection/i);
+  const relationship = await invoke(analyzeHandler, { room: "350008", player: "derived-team", type: "relationship", feature: "vehicle_count", secondFeature: "avg_vehicle_speed_kmph" });
+  assert.equal(relationship.statusCode, 200);
+  assert.equal(relationship.body.result.kind, "relationship");
+  assert.match(relationship.body.result.explanation, /lower readings|higher readings/i);
+  assert.equal(relationship.body.result.derivedFeature.operation, "product");
+  assert.match(relationship.body.result.derivedFeature.explanation, /available as one of your 10 feature slots/i);
+  assert.equal(relationship.body.result.derivedFeature.evidence.method, "median spread divided by overall IQR");
   const removed = await invoke(analyzeHandler, { room: "350005", player: "profiles-team", type: "stats", feature });
   assert.equal(removed.statusCode, 400);
+});
+
+test("an evaluated derived feature can be selected, scored, and materialized into train/test data", async () => {
+  const room = "360009", player = "derived-lock-team", event = assignment(room);
+  const relationship = await invoke(analyzeHandler, { room, player, type: "relationship", feature: "vehicle_count", secondFeature: "avg_vehicle_speed_kmph" });
+  const derived = relationship.body.result.derivedFeature;
+  const baseSelection = event.features.slice(0, 9).filter(feature => !["vehicle_count", "avg_vehicle_speed_kmph"].includes(feature));
+  while (baseSelection.length < 9) {
+    const candidate = event.features.find(feature => !baseSelection.includes(feature) && !["vehicle_count", "avg_vehicle_speed_kmph"].includes(feature));
+    if (!candidate) break;
+    baseSelection.push(candidate);
+  }
+  const selected = [...baseSelection.slice(0, 9), derived.id];
+  const lock = await invoke(featuresHandler, { room, player, features: selected, analysisState: relationship.body.analysisState });
+  assert.equal(lock.statusCode, 200);
+  assert.ok(lock.body.selected.includes(derived.id));
+  assert.equal(lock.body.derivedFeatures.length, 1);
+  const prepared = await invoke(datasetHandler, { room, player, stage: "features", featureState: lock.body.featureState });
+  assert.equal(prepared.statusCode, 200);
+  assert.ok(prepared.body.summary.features.includes(derived.id));
+  const sealed = await invoke(qualityHandler, { room, player, action: "seal", featureState: lock.body.featureState, repairs: {} });
+  assert.equal(sealed.statusCode, 200);
+  const ready = await invoke(datasetHandler, { room, player, stage: "quality", qualityState: sealed.body.qualityState, includeContent: true });
+  assert.ok(ready.body.trainCsv.split("\n", 1)[0].includes(derived.id));
+  const firstDataRow = ready.body.trainCsv.split("\n")[1].split(",");
+  const header = ready.body.trainCsv.split("\n")[0].split(",");
+  const source = event.trainDamaged[0];
+  const derivedValue = Number(firstDataRow[header.indexOf(derived.id)]);
+  assert.equal(derivedValue, Number(source.vehicle_count) * Number(source.avg_vehicle_speed_kmph));
 });
 
 test("Feature Hunt scores strong channels at 2 points, moderate at 1, and weak at 0 out of 20", async () => {
@@ -164,12 +201,51 @@ test("Event 4 reports credit spend and elapsed time in the sealed quality payloa
   assert.equal(result.body.timeTakenSeconds, 273);
 });
 
-test("Event 5 generates a model-specific .ipynb notebook that reads train16/test16 CSVs and keeps source data untouched", () => {
+test("feature and quality choices are baked into prepared train/test datasets", async () => {
+  const room = "450005", player = "prepared-data-team", event = assignment(room), selected = event.features.slice(0, 10);
+  const featureLock = await invoke(featuresHandler, { room, player, features: selected });
+  assert.equal(featureLock.statusCode, 200);
+  const featureDataset = await invoke(datasetHandler, { room, player, stage: "features", featureState: featureLock.body.featureState });
+  assert.equal(featureDataset.statusCode, 200);
+  assert.deepEqual(featureDataset.body.summary.features, selected);
+  assert.equal(featureDataset.body.summary.trainRows, 2000);
+  assert.equal(featureDataset.body.summary.testRows, 500);
+  const planResponse = await invoke(qualityHandler, { room, player, action: "plan", featureState: featureLock.body.featureState });
+  const missingFeature = planResponse.body.plan.missingColumns.find(item => item.issueCount > 0)?.feature;
+  const outlierFeature = planResponse.body.plan.outlierColumns.find(item => item.issueCount > 0)?.feature;
+  const repairs = { missingColumns: missingFeature ? [missingFeature] : [], outlierColumns: outlierFeature ? [outlierFeature] : [] };
+  const quality = await invoke(qualityHandler, { room, player, action: "seal", featureState: featureLock.body.featureState, repairs, missingMethods: missingFeature ? { [missingFeature]: "median" } : {}, outlierMethods: outlierFeature ? { [outlierFeature]: "iqr_clip" } : {} });
+  assert.equal(quality.statusCode, 200);
+  const prepared = await invoke(datasetHandler, { room, player, stage: "quality", qualityState: quality.body.qualityState, includeContent: true });
+  assert.equal(prepared.statusCode, 200);
+  assert.equal(prepared.body.trainFilename, "train_ready.csv");
+  assert.equal(prepared.body.testFilename, "test_ready.csv");
+  if (missingFeature) assert.ok(prepared.body.summary.missingTrain < featureDataset.body.summary.missingTrain);
+  assert.equal(prepared.body.trainCsv.split("\n", 1)[0], ["event_id", ...selected, "label"].join(","));
+  assert.equal(prepared.body.testCsv.split("\n", 1)[0], ["event_id", ...selected].join(","));
+  assert.ok(!prepared.body.trainCsv.split("\n", 1)[0].includes(event.features[10]));
+});
+
+test("Event 5 notebook consumes prepared datasets and does not repeat feature filtering or repairs", () => {
   const tuning = normalizeTuning({ trials: 27, folds: 5, randomState: 90210 });
-  const notebook = buildKaggleScript({ model: "Random Forest", features: assignment("500005").features.slice(0, 10), repairs: { missingColumns: ["vehicle_count"], outlierColumns: [], labelRecords: [], duplicateGroups: [] }, tuning, notebook: true });
-  assert.match(notebook, /"cells"/); assert.match(notebook, /"nbformat"/); assert.match(notebook, /submission\.csv/); assert.match(notebook, /submission\.to_csv\(.*submission\.csv.*index=False/i); assert.match(notebook, /classification_report/); assert.match(notebook, /pd\.read_csv\(\\"train_16\.csv\\"\)|pd\.read_csv\(\\'train_16\.csv\\'\)/i); assert.match(notebook, /pd\.read_csv\(\\"test_16\.csv\\"\)|pd\.read_csv\(\\'test_16\.csv\\'\)/i); assert.doesNotMatch(notebook, /train16\.csv|test16\.csv/); assert.doesNotMatch(notebook, /read_csv\(.*train16\.csv.*\)/);
-  const backup = buildKaggleScript({ model: "Support Vector Machine", features: assignment("500005").backupFeatures, emergencyFeed: true, notebook: true });
-  assert.match(backup, /train_backup_10\.csv/); assert.match(backup, /test_backup_10\.csv/); assert.match(backup, /SVC\(kernel=/);
+  const notebook = buildKaggleScript({ model: "Random Forest", features: assignment("500005").features.slice(0, 10), trainFile: "train_ready.csv", testFile: "test_ready.csv", tuning, notebook: true });
+  assert.match(notebook, /"cells"/); assert.match(notebook, /"nbformat"/); assert.match(notebook, /submission\.csv/); assert.match(notebook, /submission\.to_csv\(.*submission\.csv.*index=False/i); assert.match(notebook, /classification_report/);
+  assert.match(notebook, /train_ready\.csv/); assert.match(notebook, /test_ready\.csv/);
+  assert.match(notebook, /drop\(columns=\['event_id', 'label'\]\)/);
+  assert.doesNotMatch(notebook, /SimpleImputer|fillna|iqr_clip|median_replace|SELECTED_REPAIRS|REPAIR_METHODS/);
+  assert.match(notebook, /verbose=2/);
+  assert.match(notebook, /TRAIN\/TUNE START/);
+  assert.match(notebook, /training fits/);
+  assert.match(notebook, /BEST CV/);
+  assert.match(notebook, /BEST PARAMS/);
+  assert.match(notebook, /Held-out macro F1/);
+  assert.match(notebook, /FINAL TRAIN/);
+  assert.match(notebook, /final_model\.fit\(X, y\)/);
+  assert.match(notebook, /PREDICT TEST/);
+  assert.match(notebook, /WRITE OUTPUT/);
+  assert.match(notebook, /Entire run finished/);
+  const backup = buildKaggleScript({ model: "Support Vector Machine", features: assignment("500005").backupFeatures, notebook: true });
+  assert.match(backup, /train_ready\.csv/); assert.match(backup, /test_ready\.csv/); assert.match(backup, /SVC\(kernel=/);
   assert.equal(kaggleFilename("Decision Tree", "ipynb"), "decision-tree-randomized-search.ipynb");
 });
 
