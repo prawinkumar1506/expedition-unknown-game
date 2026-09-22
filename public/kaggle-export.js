@@ -65,10 +65,6 @@ export function kaggleFilename(model, extension = "ipynb") {
   return `${stem}-randomized-search.${extension}`;
 }
 
-const safeDerivedDefinitions = values => (Array.isArray(values) ? values : []).filter(item =>
-  item && identifiers([item.id, item.left, item.right]).length === 3 && item.operation === "product"
-).map(item => ({ id: item.id, operation: "product", left: item.left, right: item.right }));
-
 const safeRepairConfig = (repairs = {}, methods = {}, features = []) => {
   const allowed = new Set(features);
   const missingColumns = repairIds(repairs.missingColumns).filter(id => allowed.has(id));
@@ -78,12 +74,11 @@ const safeRepairConfig = (repairs = {}, methods = {}, features = []) => {
   return { repairs: { missingColumns, outlierColumns }, methods: { missing, outlier } };
 };
 
-function buildPythonProgram({ model, features, trainFile, testFile, derivedFeatures = [], repairs = {}, repairMethods = {}, tuning = {} }) {
+function buildPythonProgram({ model, features, trainFile, testFile, repairs = {}, repairMethods = {}, tuning = {} }) {
   const config = MODEL_CONFIGS[model];
   if (!config) throw new Error("Choose one of the approved models.");
   const safeFeatures = identifiers(features);
   if (safeFeatures.length !== 10) throw new Error("The local model handoff requires exactly ten locked features.");
-  const safeDerived = safeDerivedDefinitions(derivedFeatures).filter(item => safeFeatures.includes(item.id));
   const safeRepairs = safeRepairConfig(repairs, repairMethods, safeFeatures);
   const settings = normalizeTuning(tuning);
   const chosenParameters = tuning.hyperparameters && typeof tuning.hyperparameters === "object" ? tuning.hyperparameters : {};
@@ -111,7 +106,6 @@ function buildPythonProgram({ model, features, trainFile, testFile, derivedFeatu
     `FEATURES = ${JSON.stringify(safeFeatures)}`,
     `TRAIN_FILE = ${JSON.stringify(trainFile)}`,
     `TEST_FILE = ${JSON.stringify(testFile)}`,
-    `DERIVED_FEATURES = json.loads(${JSON.stringify(JSON.stringify(safeDerived))})`,
     `SELECTED_REPAIRS = json.loads(${JSON.stringify(JSON.stringify(safeRepairs.repairs))})`,
     `REPAIR_METHODS = json.loads(${JSON.stringify(JSON.stringify(safeRepairs.methods))})`,
     `N_ITER = ${settings.trials}`,
@@ -132,18 +126,6 @@ function buildPythonProgram({ model, features, trainFile, testFile, derivedFeatu
     "        if matches:",
     "            return matches[0]",
     "    raise FileNotFoundError(f'Could not find {filename}. Keep the source CSV beside the notebook, under data/, under data/traffic/, or attach it as a Kaggle input dataset.')",
-    "",
-    "def materialize_derived(frame):",
-    "    frame = frame.copy()",
-    "    for definition in DERIVED_FEATURES:",
-    "        if definition.get('operation') != 'product':",
-    "            raise ValueError(f\"Unsupported derived operation: {definition.get('operation')}\")",
-    "        left = definition['left']",
-    "        right = definition['right']",
-    "        if left not in frame.columns or right not in frame.columns:",
-    "            raise ValueError(f'Derived feature requires missing source columns: {left}, {right}')",
-    "        frame[definition['id']] = pd.to_numeric(frame[left], errors='coerce') * pd.to_numeric(frame[right], errors='coerce')",
-    "    return frame",
     "",
     "def replacement_value(series, method):",
     "    numeric = pd.to_numeric(series, errors='coerce')",
@@ -200,10 +182,6 @@ function buildPythonProgram({ model, features, trainFile, testFile, derivedFeatu
     "train_source = pd.read_csv(train_path).copy()",
     "test_source = pd.read_csv(test_path).copy()",
     "log('LOAD DATA', f'Source train shape={train_source.shape} | Source test shape={test_source.shape}')",
-    "",
-    "log('DERIVED FEATURES', f'Materializing {len(DERIVED_FEATURES)} evaluated derived feature(s)')",
-    "train_source = materialize_derived(train_source)",
-    "test_source = materialize_derived(test_source)",
     "required_train = ['event_id', *FEATURES, 'label']",
     "required_test = ['event_id', *FEATURES]",
     "missing_train_columns = [name for name in required_train if name not in train_source.columns]",
@@ -300,7 +278,7 @@ function buildNotebookPayload(options) {
         source: [
           "# Operation Clearway — Local model notebook\n",
           "\n",
-          "The CSV files are the unchanged source of truth. This notebook contains the current game decisions: locked features, evaluated derived features, missing-value repairs, outlier repairs, tuning settings, and model choice.\n",
+          "The CSV files are the unchanged source of truth. This notebook contains the current game decisions: locked features, missing-value repairs, outlier repairs, tuning settings, and model choice.\n",
           `- Model: ${options.model}\n`,
           `- Features: ${safeFeatures.join(", ")}\n`,
           `- Source train: ${options.trainFile}\n`,
@@ -341,13 +319,12 @@ export function buildKaggleScript({
   features,
   trainFile = "train_16.csv",
   testFile = "test_16.csv",
-  derivedFeatures = [],
   repairs = {},
   repairMethods = {},
   tuning = {},
   notebook = false
 }) {
-  const options = { model, features, trainFile, testFile, derivedFeatures, repairs, repairMethods, tuning };
+  const options = { model, features, trainFile, testFile, repairs, repairMethods, tuning };
   const program = buildPythonProgram(options);
   return notebook ? buildNotebookPayload(options) : program.join("\n") + "\n";
 }

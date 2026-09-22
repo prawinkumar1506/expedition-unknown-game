@@ -1,26 +1,24 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { clean, json } from "./_gateway.js";
 import { assignment, FEATURE_META, TRAFFIC_CLASSES } from "./_event.js";
-import { createDerivedFeature, materializeDerivedRows } from "./_derived.js";
 
 const CATALOG = {
   classprofiles: { cost: 2, scope: "feature" },
-  correlation: { cost: 2, scope: "pair" },
-  relationship: { cost: 2, scope: "pair" }
+  correlation: { cost: 2, scope: "pair" }
 };
 const BUDGET = 10;
 const secret = () => process.env.MATCH_GATEWAY_SECRET || "expedition-local-analysis-state";
 const sign = payload => createHmac("sha256", secret()).update(payload).digest("base64url");
 function pack(state) { const payload = Buffer.from(JSON.stringify(state)).toString("base64url"); return `${payload}.${sign(payload)}`; }
 export function verifyAnalysisState(token, room, player) {
-  if (!token) return { room, player, spent: 0, purchases: [], derivedFeatures: [] };
+  if (!token) return { room, player, spent: 0, purchases: [] };
   const [payload, signature] = String(token).split(".");
   if (!payload || !signature) throw new Error("INVALID_ANALYSIS_STATE");
   const expected = sign(payload), left = Buffer.from(signature), right = Buffer.from(expected);
   if (left.length !== right.length || !timingSafeEqual(left, right)) throw new Error("INVALID_ANALYSIS_STATE");
   const state = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
   if (state.room !== room || state.player !== player || !Array.isArray(state.purchases)) throw new Error("INVALID_ANALYSIS_STATE");
-  return { ...state, derivedFeatures: Array.isArray(state.derivedFeatures) ? state.derivedFeatures : [] };
+  return { room, player, spent: Number(state.spent || 0), purchases: state.purchases };
 }
 export function evidenceKey(type, scope, cohort, feature, secondFeature) { return scope === "global" ? `${cohort}:${type}` : scope === "pair" ? `${cohort}:${type}:${feature}:${secondFeature}` : `${cohort}:${type}:${feature}`; }
 const round = value => Number.isFinite(value) ? Number(value.toFixed(4)) : null;
@@ -28,7 +26,6 @@ const numeric = values => values.filter(value => value !== null && value !== und
 const mean = values => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : NaN;
 const featureLabel = feature => FEATURE_META[feature]?.label || String(feature).replaceAll("_", " ").replace(/\b\w/g, char => char.toUpperCase());
 const classLabel = label => String(label).replaceAll("_", " ");
-function median(values) { const ordered = [...values].sort((a, b) => a - b), n = ordered.length; return n ? (n % 2 ? ordered[(n - 1) / 2] : (ordered[n / 2 - 1] + ordered[n / 2]) / 2) : NaN; }
 function quantile(values, q) { const ordered = [...values].sort((a, b) => a - b); if (!ordered.length) return NaN; const position = (ordered.length - 1) * q, low = Math.floor(position), high = Math.ceil(position); return low === high ? ordered[low] : ordered[low] + (ordered[high] - ordered[low]) * (position - low); }
 function ranks(values) {
   const indexed = values.map((value, index) => ({ value, index })).sort((a, b) => a.value - b.value), result = Array(values.length);
@@ -80,39 +77,16 @@ function correlationResult(rows, feature, secondFeature) {
   else movement = `When ${a} increases, ${b} often tends to decrease.`;
   return { kind: "correlation", feature, secondFeature, coefficient, pearson, evidence: { method: "Spearman rank correlation", strength, direction: magnitude < 0.25 ? "none" : coefficient > 0 ? "same" : "opposite" }, explanation: `${opening} ${movement} ${advice}` };
 }
-function relationshipResult(rows, feature, secondFeature, corruptionLog) {
-  const a = featureLabel(feature), b = featureLabel(secondFeature), ordered = numeric(rows.map(row => row[feature])).sort((x, y) => x - y), bins = [];
-  for (let i = 0; i < 5; i++) {
-    const low = ordered[Math.floor((ordered.length - 1) * i / 5)], high = ordered[Math.floor((ordered.length - 1) * (i + 1) / 5)], values = numeric(rows.filter(row => Number(row[feature]) >= low && Number(row[feature]) <= high).map(row => row[secondFeature]));
-    bins.push({ from: round(low), to: round(high), median: round(median(values)), count: values.length });
-  }
-  const secondValues = numeric(rows.map(row => row[secondFeature])), secondIqr = quantile(secondValues, 0.75) - quantile(secondValues, 0.25), firstTypical = bins[0]?.median, lastTypical = bins.at(-1)?.median, shift = round(secondIqr > 0 && Number.isFinite(firstTypical) && Number.isFinite(lastTypical) ? Math.abs(lastTypical - firstTypical) / secondIqr : 0) ?? 0;
-  let relationshipLevel, relationshipText;
-  if (shift >= 1) relationshipLevel = "clear";
-  else if (shift >= 0.5) relationshipLevel = "noticeable";
-  else if (shift >= 0.25) relationshipLevel = "some";
-  else relationshipLevel = "little";
-  if (relationshipLevel === "little") relationshipText = `${a} and ${b} do not show a strong low-to-high pattern. When ${a} moves from its lower readings to its higher readings, ${b} does not change enough consistently to form a clear relationship.`;
-  else {
-    const direction = lastTypical > firstTypical ? "increases" : "decreases";
-    relationshipText = `${a} and ${b} show a ${relationshipLevel === "clear" ? "clear" : relationshipLevel} pattern. When ${a} moves from its lower readings to its higher readings, the typical ${b} reading ${direction} from ${firstTypical} to ${lastTypical}.`;
-  }
-  const definition = createDerivedFeature(feature, secondFeature, a, b), derivedRows = materializeDerivedRows(rows, [definition]), profile = classProfileResult(derivedRows, definition.id, corruptionLog, definition.label);
-  const derivedAdvice = profile.evidence.level === "clear" ? "Its typical value changes a lot between traffic classes, so this combined signal can help tell traffic situations apart." : profile.evidence.level === "noticeable" ? "Its typical value changes noticeably between some traffic classes, so this combined signal may add useful information." : profile.evidence.level === "small" ? "It shows only small differences between traffic classes, so treat it as supporting information rather than a strong separator." : "Its typical value stays similar across traffic classes, so combining these two sensors does not appear to create a useful separator.";
-  const derivedFeature = { ...definition, evidence: profile.evidence, classes: profile.classes, explanation: `${definition.label} is a derived feature created by multiplying the two readings. ${derivedAdvice} Because you evaluated it here, it is now available as one of your 10 feature slots.` };
-  return { kind: "relationship", feature, secondFeature, bins, evidence: { method: "change in typical second-feature reading from the lowest to highest fifth of the first feature, scaled by the second feature IQR", shift, level: relationshipLevel }, explanation: relationshipText, derivedFeature };
-}
 function analyze(type, rows, features, feature, secondFeature, corruptionLog) {
   if (type === "classprofiles") return classProfileResult(rows, feature, corruptionLog);
-  if (type === "correlation") return correlationResult(rows, feature, secondFeature);
-  return relationshipResult(rows, feature, secondFeature, corruptionLog);
+  return correlationResult(rows, feature, secondFeature);
 }
 
 export default function handler(req, res) {
   if (req.method !== "POST") return json(res, 405, { error: "POST required" });
   const room = clean(req.body?.room, 16), player = clean(req.body?.player, 20), type = clean(req.body?.type, 20), cohort = "training", feature = clean(req.body?.feature, 48), secondFeature = clean(req.body?.secondFeature, 48), config = CATALOG[type];
   if (!room || !player) return json(res, 400, { error: "Room and player are required." });
-  if (!config) return json(res, 400, { error: `Unsupported investigation: ${type || "(missing)"}. Choose Class Profiles, Correlation Analysis, or Channel Relationship View.` });
+  if (!config) return json(res, 400, { error: `Unsupported investigation: ${type || "(missing)"}. Choose Class Profiles or Correlation Analysis.` });
   const event = assignment(room), features = event.features;
   if (config.scope !== "global" && !features.includes(feature)) return json(res, 400, { error: "Choose a valid feature to investigate." });
   if (config.scope === "pair" && (!features.includes(secondFeature) || feature === secondFeature)) return json(res, 400, { error: "Choose two different valid features." });
@@ -120,9 +94,8 @@ export default function handler(req, res) {
     const state = verifyAnalysisState(req.body?.analysisState, room, player), key = evidenceKey(type, config.scope, cohort, feature, secondFeature), alreadyPurchased = state.purchases.includes(key);
     if (!alreadyPurchased && state.spent + config.cost > BUDGET) return json(res, 409, { error: `This investigation costs ${config.cost} credits; only ${BUDGET - state.spent} remain.` });
     const working = event.trainDamaged.map(row => ({ ...row, target: row.label }));
-    const result = analyze(type, working, features, feature, secondFeature, event.corruptionLog), derivedFeatures = [...state.derivedFeatures];
-    if (result.derivedFeature && !derivedFeatures.some(item => item.id === result.derivedFeature.id)) derivedFeatures.push({ id: result.derivedFeature.id, label: result.derivedFeature.label, family: result.derivedFeature.family, operation: result.derivedFeature.operation, left: result.derivedFeature.left, right: result.derivedFeature.right, formula: result.derivedFeature.formula, evidence: result.derivedFeature.evidence });
-    const next = alreadyPurchased ? { ...state, derivedFeatures } : { ...state, spent: state.spent + config.cost, purchases: [...state.purchases, key], derivedFeatures };
+    const result = analyze(type, working, features, feature, secondFeature, event.corruptionLog);
+    const next = alreadyPurchased ? state : { ...state, spent: state.spent + config.cost, purchases: [...state.purchases, key] };
     return json(res, 200, { result: { ...result, cohort, recordCount: working.length }, cost: alreadyPurchased ? 0 : config.cost, replayed: alreadyPurchased, creditsRemaining: BUDGET - next.spent, spent: next.spent, purchases: next.purchases, analysisState: pack(next) });
   } catch (error) { return json(res, 409, { error: error.message === "INVALID_ANALYSIS_STATE" ? "Investigation ledger could not be verified. Reload the mission." : error.message }); }
 }

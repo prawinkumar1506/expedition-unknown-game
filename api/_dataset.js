@@ -1,5 +1,3 @@
-import { materializeDerivedRows } from "./_derived.js";
-
 const numeric = values => values.filter(value => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value))).map(Number);
 const missing = value => value === null || value === undefined || value === "" || (typeof value === "number" && Number.isNaN(value));
 const median = values => { const ordered = numeric(values).sort((a, b) => a - b), n = ordered.length; return n ? (n % 2 ? ordered[(n - 1) / 2] : (ordered[n / 2 - 1] + ordered[n / 2]) / 2) : null; };
@@ -53,9 +51,8 @@ function repairOutliers(train, test, feature, method) {
   test.forEach(repair);
 }
 
-export function prepareDatasets({ trainRows, testRows, features, derivedFeatures = [], repairs = {}, methods = {} }) {
-  const trainSource = materializeDerivedRows(trainRows, derivedFeatures), testSource = materializeDerivedRows(testRows, derivedFeatures);
-  const train = project(trainSource, features, true), test = project(testSource, features, false);
+export function prepareDatasets({ trainRows, testRows, features, repairs = {}, methods = {} }) {
+  const train = project(trainRows, features, true), test = project(testRows, features, false);
   const missingColumns = new Set(repairs.missingColumns || []), outlierColumns = new Set(repairs.outlierColumns || []);
   for (const feature of features) {
     if (missingColumns.has(feature)) fillMissing(train, test, feature, methods.missing?.[feature] || "median");

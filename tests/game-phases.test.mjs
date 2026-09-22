@@ -95,7 +95,7 @@ test("Feature Hunt spends a signed 10-credit ledger and locks exactly ten channe
   assert.equal(sealed.statusCode, 200); assert.equal(sealed.body.selected.length, 10); assert.equal(sealed.body.strongCount + sealed.body.moderateCount + sealed.body.weakCount, 10); assert.ok(sealed.body.featureState);
 });
 
-test("Event 3 exposes only the three dynamic investigations and class profiles", async () => {
+test("Event 3 exposes only class profiles and correlation analysis", async () => {
   const event = assignment("350005"), feature = event.features[0];
   const profiles = await invoke(analyzeHandler, { room: "350005", player: "profiles-team", type: "classprofiles", feature });
   assert.equal(profiles.statusCode, 200);
@@ -113,44 +113,18 @@ test("Event 3 exposes only the three dynamic investigations and class profiles",
   const unrelated = await invoke(analyzeHandler, { room: "350007", player: "correlation-team-2", type: "correlation", feature: "vehicle_count", secondFeature: "rain_intensity_mmhr" });
   assert.equal(unrelated.body.result.evidence.strength, "little");
   assert.match(unrelated.body.result.explanation, /very little connection/i);
-  const relationship = await invoke(analyzeHandler, { room: "350008", player: "derived-team", type: "relationship", feature: "vehicle_count", secondFeature: "avg_vehicle_speed_kmph" });
-  assert.equal(relationship.statusCode, 200);
-  assert.equal(relationship.body.result.kind, "relationship");
-  assert.match(relationship.body.result.explanation, /lower readings|higher readings/i);
-  assert.equal(relationship.body.result.derivedFeature.operation, "product");
-  assert.match(relationship.body.result.derivedFeature.explanation, /available as one of your 10 feature slots/i);
-  assert.equal(relationship.body.result.derivedFeature.evidence.method, "median spread divided by overall IQR");
+  const relationship = await invoke(analyzeHandler, { room: "350008", player: "removed-tool-team", type: "relationship", feature: "vehicle_count", secondFeature: "avg_vehicle_speed_kmph" });
+  assert.equal(relationship.statusCode, 400);
   const removed = await invoke(analyzeHandler, { room: "350005", player: "profiles-team", type: "stats", feature });
   assert.equal(removed.statusCode, 400);
 });
 
-test("an evaluated derived feature can be selected, scored, and materialized into train/test data", async () => {
-  const room = "360009", player = "derived-lock-team", event = assignment(room);
-  const relationship = await invoke(analyzeHandler, { room, player, type: "relationship", feature: "vehicle_count", secondFeature: "avg_vehicle_speed_kmph" });
-  const derived = relationship.body.result.derivedFeature;
-  const baseSelection = event.features.slice(0, 9).filter(feature => !["vehicle_count", "avg_vehicle_speed_kmph"].includes(feature));
-  while (baseSelection.length < 9) {
-    const candidate = event.features.find(feature => !baseSelection.includes(feature) && !["vehicle_count", "avg_vehicle_speed_kmph"].includes(feature));
-    if (!candidate) break;
-    baseSelection.push(candidate);
-  }
-  const selected = [...baseSelection.slice(0, 9), derived.id];
-  const lock = await invoke(featuresHandler, { room, player, features: selected, analysisState: relationship.body.analysisState });
-  assert.equal(lock.statusCode, 200);
-  assert.ok(lock.body.selected.includes(derived.id));
-  assert.equal(lock.body.derivedFeatures.length, 1);
-  const prepared = await invoke(datasetHandler, { room, player, stage: "features", featureState: lock.body.featureState });
-  assert.equal(prepared.statusCode, 200);
-  assert.ok(prepared.body.summary.features.includes(derived.id));
-  const sealed = await invoke(qualityHandler, { room, player, action: "seal", featureState: lock.body.featureState, repairs: {} });
-  assert.equal(sealed.statusCode, 200);
-  const ready = await invoke(datasetHandler, { room, player, stage: "quality", qualityState: sealed.body.qualityState, includeContent: true });
-  assert.ok(ready.body.trainCsv.split("\n", 1)[0].includes(derived.id));
-  const firstDataRow = ready.body.trainCsv.split("\n")[1].split(",");
-  const header = ready.body.trainCsv.split("\n")[0].split(",");
-  const source = event.trainDamaged[0];
-  const derivedValue = Number(firstDataRow[header.indexOf(derived.id)]);
-  assert.equal(derivedValue, Number(source.vehicle_count) * Number(source.avg_vehicle_speed_kmph));
+test("Feature Hunt rejects channels outside the original telemetry set", async () => {
+  const room = "360009", player = "original-only-team", event = assignment(room);
+  const selected = [...event.features.slice(0, 9), "drv_fake_feature"];
+  const lock = await invoke(featuresHandler, { room, player, features: selected });
+  assert.equal(lock.statusCode, 400);
+  assert.match(lock.body.error, /unavailable telemetry channel/i);
 });
 
 test("Feature Hunt scores strong channels at 2 points, moderate at 1, and weak at 0 out of 20", async () => {

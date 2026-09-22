@@ -38,17 +38,10 @@ export default function handler(req, res) {
   const event = assignment(room);
   try {
     const ledger = verifyAnalysisState(req.body?.analysisState, room, player);
-    const derivedById = new Map((ledger.derivedFeatures || []).map(item => [item.id, item]));
-    if (requested.some(feature => !event.features.includes(feature) && !derivedById.has(feature))) return json(res, 400, { error: "The channel set contains a feature that was not available or evaluated." });
+    if (requested.some(feature => !event.features.includes(feature))) return json(res, 400, { error: "The channel set contains an unavailable telemetry channel." });
     const selected = completeSelection(requested, event.features, event.featureStrength, `${room}:${player}`);
     const autoSelected = selected.filter(feature => !requested.includes(feature));
-    const strengthFor = feature => {
-      if (event.featureStrength[feature]?.intended_strength) return event.featureStrength[feature].intended_strength;
-      const separation = Number(derivedById.get(feature)?.evidence?.separation || 0);
-      if (separation >= 1) return "strong";
-      if (separation >= 0.5) return "moderate";
-      return "weak";
-    };
+    const strengthFor = feature => event.featureStrength[feature]?.intended_strength || "weak";
     const strongCount = selected.filter(feature => strengthFor(feature) === "strong").length;
     const moderateCount = selected.filter(feature => strengthFor(feature) === "moderate").length;
     const weakCount = selected.filter(feature => strengthFor(feature) === "weak").length;
@@ -60,7 +53,6 @@ export default function handler(req, res) {
     const investigationTypes = new Set(ledger.purchases.map(key => key.split(":")[1])).size;
     const investigation = Math.min(100, investigationTypes * 15 + ledger.spent * 4);
     const components = { channelStrength: pointsEarned * 10, investigation };
-    const selectedDerivedFeatures = [...derivedById.values()].filter(item => selected.includes(item.id));
     const featureState = packState("features", {
       room,
       player,
@@ -74,8 +66,7 @@ export default function handler(req, res) {
       weakCount,
       pointsEarned,
       maxPoints,
-      spent: ledger.spent,
-      derivedFeatures: selectedDerivedFeatures
+      spent: ledger.spent
     });
     return json(res, 200, {
       locked: true,
@@ -92,7 +83,6 @@ export default function handler(req, res) {
       maxPoints,
       components,
       spent: ledger.spent,
-      derivedFeatures: selectedDerivedFeatures,
       featureState,
       message: `Feature Hunt sealed: ${strongCount} strong, ${moderateCount} moderate, ${weakCount} weak channels. Feature quality score ${score}/100.`
     });

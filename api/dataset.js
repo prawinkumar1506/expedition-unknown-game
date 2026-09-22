@@ -11,7 +11,7 @@ export default function handler(req, res) {
     const event = assignment(room);
     if (stage === "features") {
       const state = verifyState(req.body?.featureState, "features", room, player);
-      const prepared = prepareDatasets({ trainRows: event.trainDamaged, testRows: event.test, features: state.selected, derivedFeatures: state.derivedFeatures || [] });
+      const prepared = prepareDatasets({ trainRows: event.trainDamaged, testRows: event.test, features: state.selected });
       return json(res, 200, { stage, trainFilename: "train_ready.csv", testFilename: "test_ready.csv", summary: prepared.summary });
     }
     if (stage === "quality") {
@@ -20,7 +20,6 @@ export default function handler(req, res) {
         trainRows: emergency ? event.trainBackup : event.trainDamaged,
         testRows: emergency ? event.testBackup : event.test,
         features: state.features,
-        derivedFeatures: state.derivedFeatures || [],
         repairs: state.repairs,
         methods: state.methods
       });
