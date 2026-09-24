@@ -33,6 +33,47 @@ const FORECAST_TIMEOUT_SECONDS = ROUND4_TIMEOUT_SECONDS;
 const stageStorageKey = `clearway-progress:${session?.room || "unknown"}:${session?.player || "unknown"}`;
 const REPAIR_BUDGET = ROUND4.repairBudget;
 let generatingNotebook = false, kaggleSubmitted = false;
+const EVENT1_ARCHIVE_CANDIDATES = [
+  "JTU7_stream_A_core_20260314_0314_gen1.csv",
+  "JTU7_stream_A_core_20260314_0314_gen2.csv",
+  "JTU7_stream_A_core_20260314_0314_gen3.csv",
+  "JTU7_stream_A_core_20260314_0314_gen3_COPY.csv",
+  "JTU7_stream_B_context_20260314_0314_gen3.csv",
+  "JTU7_stream_B_context_20260315_0314_gen3.csv",
+  "JTU7_stream_C_labels_20260314_0314_gen3.csv",
+  "JTU7_stream_C_labels_20260314_0314_gen3_partial.csv",
+  "JTU9_stream_A_core_20260314_0314_gen3.csv",
+  "camera_diag_backup_2025.csv",
+  "weather_export_legacy_2024Q1.csv",
+  "traffic/backup_feature_list.json"
+];
+const seededHash = value => {
+  let hash = 2166136261;
+  for (const character of String(value)) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+};
+const seededRandom = seed => {
+  let state = seed >>> 0;
+  return () => {
+    state += 0x6D2B79F5;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+};
+const shuffledForTeam = values => {
+  const shuffled = [...values];
+  const random = seededRandom(seededHash(`${roomControl.missionSeed || session.room}:${session.player}:event1`));
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+};
 const generateKaggleWindowExpired = () => Boolean(qualityTimerStart && Date.now() - qualityTimerStart >= ROUND4_TIMEOUT_SECONDS * 1000);
 const round4Closed = () => forecastLocked || qualityResult?.status === "COMPLETED" || generateKaggleWindowExpired();
 const searchCreditsRemaining = () => Math.max(0, ROUND4.searchBudget - modelSpend());
@@ -348,25 +389,12 @@ function updateChrome() {
 }
 
 function renderEvent1() {
-  const archiveCandidates = [
-    "JTU7_stream_A_core_20260314_0314_gen1.csv",
-    "JTU7_stream_A_core_20260314_0314_gen2.csv",
-    "JTU7_stream_A_core_20260314_0314_gen3.csv",
-    "JTU7_stream_A_core_20260314_0314_gen3_COPY.csv",
-    "JTU7_stream_B_context_20260314_0314_gen3.csv",
-    "JTU7_stream_B_context_20260315_0314_gen3.csv",
-    "JTU7_stream_C_labels_20260314_0314_gen3.csv",
-    "JTU7_stream_C_labels_20260314_0314_gen3_partial.csv",
-    "JTU9_stream_A_core_20260314_0314_gen3.csv",
-    "camera_diag_backup_2025.csv",
-    "weather_export_legacy_2024Q1.csv",
-    "traffic/backup_feature_list.json"
-  ];
+  const archiveCandidates = shuffledForTeam(EVENT1_ARCHIVE_CANDIDATES);
   return `${sectionIntro("1", "Archive Reconstruction", [
-    "When the system came back online, the recovery team found several files from the night of the incident mixed together in the archive. Records from more than one junction had been copied into the same recovery folder, so matching the correct site is part of the reconstruction.",
+    "When the system came back online, the recovery team found several files from the night of the incident mixed together in the archive. Two junction identifiers appeared repeatedly: JTU-7 and JTU-9. The operations notes for the affected Meridian Avenue crossing were filed under JTU-7, while JTU-9 appeared in records from another nearby route.",
     "The first alert from the crossing was logged at 03:14 on March 14, and the monitoring team kept recording the incident for the next six hours, until 09:14. A few files dated March 15 had also ended up in the same folder during recovery, so not every file with a similar name belonged to the incident window.",
-    "The archive had also been synchronized several times while the network was unstable. Some synchronization attempts were incomplete or contained older records, while one completed copy was captured shortly before the system went offline.",
-    "Recovery was not perfectly clean either. Alongside the synchronized files were older fragments left behind by previous attempts and stray files copied in from unrelated folders—including backups, duplicate copies, partial exports, and legacy records. They may look relevant at first glance, but they were never part of the final incident archive.",
+    "The archive had also been synchronized several times while the network was unstable. The first synchronization stopped before it finished, and the second contained an older version of the records. A third synchronization completed successfully shortly before the system went offline, making it the last complete copy of the incident data.",
+    "Recovery was not perfectly clean either. Alongside the synchronized files were older fragments left behind by previous attempts and stray files copied in from unrelated folders, including backups, duplicate copies, partial exports, and legacy records. They may look relevant at first glance, but they were never part of the final incident archive.",
     "Your task is to reconstruct the set of files that belongs to the same incident, using the details in the recovery notes to separate the actual archive from everything that was mixed in around it."
   ], ["Archive Reconstruction", "Manual Override", "Feature Hunt", "Quality Lab", "Forecast"])}
     <section class="card"><div class="panel-title">Recovered archive bundle <span>Pull together the fragments that belong to the same final recovery window</span></div>
