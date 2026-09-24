@@ -170,9 +170,11 @@ test("Round 4 generates clean model-search notebooks for the participant train/t
   const notebook = JSON.parse(buildKaggleScript({ model: "Random Forest", features: assignment("500005").features.slice(0, 10), repairs: { missingColumns: ["vehicle_count"], outlierColumns: [] }, tuning, notebook: true }));
   const code = notebook.cells.filter(cell => cell.cell_type === "code").map(cell => cell.source.join("")).join("\n");
   assert.equal(notebook.nbformat, 4);
+  assert.match(code, /%pip install -q pandas numpy scikit-learn threadpoolctl/);
   assert.match(code, /TRAIN_FILE = "train_16.csv"/);
   assert.match(code, /TEST_FILE = "test_16.csv"/);
-  assert.match(code, /submission.to_csv\("submission.csv", index=False\)/);
+  assert.match(code, /SUBMISSION_FILE = "submission_random_forest.csv"/);
+  assert.match(code, /submission.to_csv\(SUBMISSION_FILE, index=False\)/);
   assert.match(code, /classification_report/);
   assert.match(code, /randomized_search_results\.csv/);
   assert.match(code, /best_model_evaluation\.json/);
