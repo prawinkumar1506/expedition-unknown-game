@@ -74,14 +74,14 @@ test("Manual Override uses QuickRead answer keys and scores only correct answers
   assert.equal(res.statusCode, 200); assert.equal(res.body.correct, 10); assert.equal(res.body.wrong, 5); assert.equal(res.body.blank, 35); assert.equal(res.body.points, 10); assert.equal(res.body.score, 20); assert.ok(res.body.manualState);
 });
 
-test("Feature Hunt spends a signed 10-credit ledger and locks exactly ten channels", async () => {
+test("Feature Hunt spends a signed 75-credit ledger and locks exactly ten channels", async () => {
   const room = "300003", player = "feature-team", event = assignment(room);
   const blocked = await invoke(analyzeHandler, { room, player, type: "importance" });
     assert.equal(blocked.statusCode, 400);
   const profiles = await invoke(analyzeHandler, { room, player, type: "classprofiles", feature: event.features[0] });
-  assert.equal(profiles.body.creditsRemaining, 8);
+  assert.equal(profiles.body.creditsRemaining, 72);
   const correlation = await invoke(analyzeHandler, { room, player, type: "correlation", feature: event.features[0], secondFeature: event.features[1], analysisState: profiles.body.analysisState });
-  assert.equal(correlation.body.creditsRemaining, 6);
+  assert.equal(correlation.body.creditsRemaining, 69);
   const completed = await invoke(featuresHandler, { room, player, features: event.features.slice(0, 9), analysisState: correlation.body.analysisState });
   assert.equal(completed.statusCode, 200);
   assert.equal(completed.body.selected.length, 10);
@@ -178,19 +178,20 @@ test("Round 4 generates clean model-search notebooks for the participant train/t
   assert.match(code, /classification_report/);
   assert.match(code, /randomized_search_results\.csv/);
   assert.match(code, /best_model_evaluation\.json/);
-  assert.match(code, /submission\.to_csv\("submission\.csv", index=False\)/);
+  assert.match(code, /SUBMISSION_FILE = "submission_random_forest\.csv"/);
+  assert.match(code, /submission\.to_csv\(SUBMISSION_FILE, index=False\)/);
   assert.doesNotMatch(code, /train_ready|test_ready|test_truth|train_clean/);
   assert.equal(kaggleFilename("Decision Tree", "ipynb"), "decision-tree-regular-search.ipynb");
 });
 
-test("Round 4 lasts 90 minutes and completion opens after 60 minutes", async () => {
+test("Round 4 lasts 90 minutes and has no one-hour minimum completion gate", async () => {
   const { ROUND4 } = await import("../public/round4-config.js");
   assert.equal(ROUND4.durationSeconds, 90 * 60);
-  assert.equal(ROUND4.minimumSeconds, 60 * 60);
+  assert.equal(ROUND4.minimumSeconds, 0);
   const fs = await import("node:fs/promises");
   const source = await fs.readFile(new URL("../public/game.js", import.meta.url), "utf8");
   assert.match(source, /QUALITY_TIMEOUT_SECONDS\s*=\s*ROUND4\.durationSeconds/);
-  assert.match(source, /round4Elapsed\(\) < ROUND4\.minimumSeconds/);
+  assert.doesNotMatch(source, /Complete at least 60 minutes/);
   assert.match(source, /round4Closed\(\) \|\| generatingNotebook/);
 });
 

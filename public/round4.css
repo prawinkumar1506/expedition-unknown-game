@@ -14,7 +14,7 @@
 .round4-lab .r4-clock span { font: 10px 'JetBrains Mono', monospace; letter-spacing: 1px; color: var(--r4-accent); }
 .round4-lab .r4-clock strong { font: 42px 'JetBrains Mono', monospace; }
 .round4-lab .r4-clock small { font-size: 11px; color: #bccfc7; }
-.round4-lab .r4-wallets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.round4-lab .r4-wallets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
 .round4-lab .r4-wallets > div { background: #1b252f; border: 1px solid var(--r4-line); border-radius: 12px; padding: 22px; display: grid; gap: 10px; }
 .round4-lab .r4-wallets span { color: var(--r4-muted); font: 10px 'JetBrains Mono', monospace; letter-spacing: 1.5px; }
 .round4-lab .r4-wallets b { font-size: 30px; font-weight: 600; }
@@ -90,7 +90,7 @@
 .round4-lab .r4-finish > div { flex: 1; }
 .round4-lab .r4-finish p { color: var(--r4-muted); font-size: 13px; line-height: 1.8; margin-top: 12px; }
 .round4-lab .r4-finish label { display: flex; gap: 10px; align-items: center; font-size: 12px; margin-top: 20px; }
-@media (max-width: 1250px) { .round4-lab .r4-models { grid-template-columns: repeat(2, minmax(0, 1fr)); } .round4-lab .r4-roadmap small { display: none; } }
+@media (max-width: 1250px) { .round4-lab .r4-models, .round4-lab .r4-wallets { grid-template-columns: repeat(2, minmax(0, 1fr)); } .round4-lab .r4-roadmap small { display: none; } }
 @media (max-width: 760px) { .round4-lab .r4-hero { flex-direction: column; align-items: flex-start; padding: 24px; } .round4-lab .r4-clock { text-align: left; } .round4-lab .r4-wallets, .round4-lab .r4-workbench, .round4-lab .r4-repairs { grid-template-columns: 1fr; } .round4-lab .r4-wallets { gap: 10px; } .round4-lab .r4-wallets > div { padding: 18px; } .round4-lab .r4-panel { padding: 20px; } .round4-lab .r4-heading, .round4-lab .r4-finish { flex-direction: column; align-items: flex-start; } .round4-lab .r4-run-summary { position: static; } .round4-lab .r4-roadmap { flex-direction: column; } .round4-lab .r4-models { grid-template-columns: 1fr; } .round4-lab summary span { float: none; display: block; margin-top: 8px; } }
 
 /* Round 4 light theme. The round has its own visual system, so it needs an

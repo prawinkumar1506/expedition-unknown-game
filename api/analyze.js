@@ -3,10 +3,10 @@ import { clean, json } from "./_gateway.js";
 import { assignment, FEATURE_META, TRAFFIC_CLASSES } from "./_event.js";
 
 const CATALOG = {
-  classprofiles: { cost: 2, scope: "feature" },
-  correlation: { cost: 2, scope: "pair" }
+  classprofiles: { cost: 3, scope: "feature" },
+  correlation: { cost: 3, scope: "pair" }
 };
-const BUDGET = 10;
+const BUDGET = 75;
 const secret = () => process.env.MATCH_GATEWAY_SECRET || "expedition-local-analysis-state";
 const sign = payload => createHmac("sha256", secret()).update(payload).digest("base64url");
 function pack(state) { const payload = Buffer.from(JSON.stringify(state)).toString("base64url"); return `${payload}.${sign(payload)}`; }

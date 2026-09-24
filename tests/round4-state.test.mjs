@@ -41,12 +41,12 @@ function client({ elapsed = 0, completed = false, failSave = false } = {}) {
   return { ...context.state, calls, nodes };
 }
 
-test("Round 4 restores a consistent 90-minute countdown and blocks completion before 60 minutes", async () => {
-  const session = client({ elapsed: 3599 });
-  assert.equal(session.formatQualityCountdown(), "30:01");
+test("Round 4 restores a consistent 90-minute countdown and allows early completion", async () => {
+  const session = client({ elapsed: 599 });
+  assert.equal(session.formatQualityCountdown(), "80:01");
   await session.submitEvent4();
-  assert.equal(session.calls.length, 0);
-  assert.equal(session.serializeState().forecastLocked, false);
+  assert.equal(session.calls.length, 1);
+  assert.equal(session.serializeState().forecastLocked, true);
 });
 
 test("Round 4 completion persists full elapsed time and credits before locking", async () => {

@@ -36,6 +36,14 @@ const leaderboardStages = [
   ["features", "E3 Features"],
   ["quality", "E4 Handoff"]
 ];
+const INVESTIGATION_BUDGET = 75;
+const OVERALL_CREDIT_BUDGET = 200;
+const EVENT1_LIMIT_SECONDS = 15 * 60;
+const FEATURE_LIMIT_SECONDS = 30 * 60;
+const FINAL_LIMIT_SECONDS = 90 * 60;
+const PERFORMANCE_WEIGHT = 0.90;
+const CREDIT_WEIGHT = 0.05;
+const TIME_WEIGHT = 0.05;
 
 const esc = value => String(value ?? "").replace(/[&<>"']/g, character => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
@@ -84,16 +92,33 @@ function stageNormalizedScore(player, stage) {
 }
 
 function leaderboardRow(player) {
+  const progress = room?.progress?.[player.name] || {};
   const stages = Object.fromEntries(leaderboardStages.map(([stage]) => [stage, stageNormalizedScore(player.name, stage)]));
   const total = Object.values(stages).reduce((sum, score) => sum + score, 0);
   const completed = leaderboardStages.filter(([stage]) => scoreFor(player.name, stage)).length;
   const totalTime = leaderboardStages.reduce((sum, [stage]) => sum + number(scoreFor(player.name, stage)?.timeTakenSeconds), 0);
-  const progress = room?.progress?.[player.name] || {};
+  const featureCredits = scoreFor(player.name, "features")?.credits ?? Math.max(0, INVESTIGATION_BUDGET - number(progress.analysisCredits ?? INVESTIGATION_BUDGET));
+  const runs = Array.isArray(progress.forecastRuns) ? progress.forecastRuns : [];
+  const roundCreditsFromProgress = runs.reduce((sum, run) => sum + number(run.cost) + number(run.repairCost), 0);
+  const roundCredits = scoreFor(player.name, "quality")?.credits ?? roundCreditsFromProgress;
+  const creditsUsed = Math.max(0, featureCredits + roundCredits);
+  const creditEfficiency = Math.max(0, Math.min(100, (1 - creditsUsed / OVERALL_CREDIT_BUDGET) * 100));
+  const manualLimit = Math.max(60, number(room?.stageDurations?.manual || 20 * 60));
+  const stageLimits = { event1: EVENT1_LIMIT_SECONDS, manual: manualLimit, features: FEATURE_LIMIT_SECONDS, quality: FINAL_LIMIT_SECONDS };
+  const completedTimeBudget = leaderboardStages.reduce((sum, [stage]) => sum + (scoreFor(player.name, stage) ? stageLimits[stage] : 0), 0);
+  const timeEfficiency = completedTimeBudget ? Math.max(0, Math.min(100, (1 - totalTime / completedTimeBudget) * 100)) : 0;
+  const completionFactor = completed / leaderboardStages.length;
+  const performance = total / leaderboardStages.length;
+  const evaluation = performance * PERFORMANCE_WEIGHT + creditEfficiency * CREDIT_WEIGHT * completionFactor + timeEfficiency * TIME_WEIGHT * completionFactor;
   return {
     player: player.name,
     stages,
     total,
-    overall: total / leaderboardStages.length,
+    overall: performance,
+    evaluation,
+    creditsUsed,
+    creditEfficiency,
+    timeEfficiency,
     completed,
     totalTime,
     currentStage: progress.stage || "event1"
@@ -102,7 +127,7 @@ function leaderboardRow(player) {
 
 function leaderboardRows() {
   return (room?.players || []).map(leaderboardRow).sort((a, b) =>
-    b.total - a.total || b.completed - a.completed || a.totalTime - b.totalTime || a.player.localeCompare(b.player)
+    b.evaluation - a.evaluation || b.total - a.total || b.completed - a.completed || a.creditsUsed - b.creditsUsed || a.totalTime - b.totalTime || a.player.localeCompare(b.player)
   );
 }
 
@@ -118,12 +143,14 @@ function renderLeaderboard() {
     overallLeaderboard.innerHTML = '<div class="host-empty">Waiting for teams to join…</div>';
     return;
   }
-  overallLeaderboard.innerHTML = `<div class="table-scroll"><table class="data-table leaderboard-table"><thead><tr><th>Rank</th><th>Team</th>${leaderboardStages.map(([, label]) => `<th>${esc(label)}</th>`).join("")}<th>Total</th><th>Overall</th><th>Current stage</th><th></th></tr></thead><tbody>${rows.map((entry, index) => `<tr>
+  overallLeaderboard.innerHTML = `<div class="table-scroll"><table class="data-table leaderboard-table"><thead><tr><th>Rank</th><th>Team</th>${leaderboardStages.map(([, label]) => `<th>${esc(label)}</th>`).join("")}<th>Total</th><th>Credits used</th><th>Time</th><th>Evaluation</th><th>Current stage</th><th></th></tr></thead><tbody>${rows.map((entry, index) => `<tr>
     <td class="leaderboard-rank">#${index + 1}</td>
     <td class="leaderboard-team">${esc(entry.player)}<span class="leaderboard-meta">${entry.completed}/4 stages · ${formatTime(entry.totalTime)} recorded</span></td>
     ${leaderboardStages.map(([stage]) => `<td class="leaderboard-stage">${scoreCell(entry.stages[stage], Boolean(scoreFor(entry.player, stage)))}</td>`).join("")}
     <td class="leaderboard-total">${entry.total.toFixed(1)} / 400</td>
-    <td><strong>${entry.overall.toFixed(1)}%</strong></td>
+    <td><strong>${entry.creditsUsed} / ${OVERALL_CREDIT_BUDGET}</strong></td>
+    <td><strong>${formatTime(entry.totalTime)}</strong></td>
+    <td><strong>${entry.evaluation.toFixed(2)}</strong><span class="leaderboard-meta">90% score · 5% credits · 5% time</span></td>
     <td><span class="stage-pill">${esc(stageNames[entry.currentStage] || entry.currentStage)}</span></td>
     <td class="leaderboard-actions"><button class="btn btn--ghost" data-inspect-player="${esc(entry.player)}">Inspect</button></td>
   </tr>`).join("")}</tbody></table></div>`;
@@ -192,7 +219,7 @@ function renderTeamInspector() {
 
   const event1Body = `<div class="inspect-grid">${kv("Status", e1.status || (e1.passed ? "completed" : "not submitted"))}${kv("Passed", e1.passed === undefined ? "—" : e1.passed ? "Yes" : "No")}${kv("Time", formatTime(e1.timeTakenSeconds))}${kv("Selections", `${(progress.event1Selections || []).length}/3`)}</div><div class="inspect-section-label">Archive fragments selected</div>${chips(progress.event1Selections || [])}`;
   const event2Body = `<div class="inspect-grid">${kv("Correct", e2.correct ?? "—")}${kv("Wrong", e2.wrong ?? "—")}${kv("Blank", e2.blank ?? "—")}${kv("Score", e2.score == null ? "—" : pct(e2.score))}${kv("Time", formatTime(e2.timeTakenSeconds))}${kv("Answers recorded", labels.length)}</div><div class="inspect-section-label">Manual decisions</div>${labels.length ? `<div class="table-scroll"><table class="inspect-table"><thead><tr><th>Record</th><th>Controller call</th></tr></thead><tbody>${labels.sort(([a], [b]) => a.localeCompare(b)).map(([id, value]) => `<tr><td>${esc(id)}</td><td>${esc(value || "blank")}</td></tr>`).join("")}</tbody></table></div>` : '<p class="inspect-note">No Manual Override decisions have been checkpointed.</p>'}`;
-  const event3Body = `<div class="inspect-grid">${kv("Score", e3.score == null ? "—" : pct(e3.score))}${kv("Strong", e3.strong ?? progress.featureResult?.strongCount ?? "—")}${kv("Moderate", e3.moderate ?? progress.featureResult?.moderateCount ?? "—")}${kv("Weak", e3.weak ?? progress.featureResult?.weakCount ?? "—")}${kv("Intel spent", `${10 - number(progress.analysisCredits ?? 10)} / 10`)}${kv("Investigations", findings.length)}</div><div class="inspect-section-label">Locked features</div>${chips(selectedFeatures, "good")}${autoSelected.length ? `<div class="inspect-section-label">Server auto-filled features</div>${chips(autoSelected, "warn")}` : ""}<div class="inspect-section-label">Purchased evidence</div>${findings.length ? `<div class="table-scroll"><table class="inspect-table"><thead><tr><th>#</th><th>Investigation</th></tr></thead><tbody>${findings.map((item, index) => `<tr><td>${index + 1}</td><td>${esc(investigationDescription(item))}</td></tr>`).join("")}</tbody></table></div>` : '<p class="inspect-note">No investigation results are checkpointed.</p>'}`;
+  const event3Body = `<div class="inspect-grid">${kv("Score", e3.score == null ? "—" : pct(e3.score))}${kv("Strong", e3.strong ?? progress.featureResult?.strongCount ?? "—")}${kv("Moderate", e3.moderate ?? progress.featureResult?.moderateCount ?? "—")}${kv("Weak", e3.weak ?? progress.featureResult?.weakCount ?? "—")}${kv("Intel spent", `${INVESTIGATION_BUDGET - number(progress.analysisCredits ?? INVESTIGATION_BUDGET)} / ${INVESTIGATION_BUDGET}`)}${kv("Investigations", findings.length)}</div><div class="inspect-section-label">Locked features</div>${chips(selectedFeatures, "good")}${autoSelected.length ? `<div class="inspect-section-label">Server auto-filled features</div>${chips(autoSelected, "warn")}` : ""}<div class="inspect-section-label">Purchased evidence</div>${findings.length ? `<div class="table-scroll"><table class="inspect-table"><thead><tr><th>#</th><th>Investigation</th></tr></thead><tbody>${findings.map((item, index) => `<tr><td>${index + 1}</td><td>${esc(investigationDescription(item))}</td></tr>`).join("")}</tbody></table></div>` : '<p class="inspect-note">No investigation results are checkpointed.</p>'}`;
   const missingMethodRows = missingRepairs.map(feature => [feature, progress.repairMethods?.missing?.[feature] || "median"]);
   const outlierMethodRows = outlierRepairs.map(feature => [feature, progress.repairMethods?.outlier?.[feature] || "iqr_clip"]);
   const committedRepairCredits = forecastRuns.reduce((sum, run) => sum + number(run.repairCost), 0);
@@ -204,8 +231,10 @@ function renderTeamInspector() {
 
   teamInspector.innerHTML = `<div class="inspector-summary">
     <div><small>TEAM</small><strong>${esc(selectedInspector)}</strong></div>
-    <div><small>OVERALL</small><strong class="accent-value">${standing.overall.toFixed(1)}%</strong></div>
+    <div><small>EVALUATION</small><strong class="accent-value">${standing.evaluation.toFixed(2)}</strong></div>
     <div><small>TOTAL</small><strong>${standing.total.toFixed(1)} / 400</strong></div>
+    <div><small>CREDITS USED</small><strong>${standing.creditsUsed} / ${OVERALL_CREDIT_BUDGET}</strong></div>
+    <div><small>RECORDED TIME</small><strong>${formatTime(standing.totalTime)}</strong></div>
     <div><small>COMPLETED</small><strong>${standing.completed} / 4</strong></div>
     <div><small>CURRENT STAGE</small><strong>${esc(stageNames[standing.currentStage] || standing.currentStage)}</strong></div>
   </div><div class="inspector-body">
@@ -265,7 +294,7 @@ function renderFeatureScoreboard() {
 function renderQualityScoreboard() {
   const scores = getQualityScores();
   if (!scores.length) { qualityScoreboard.innerHTML = "<span>No Event 4 results yet.</span>"; return; }
-  qualityScoreboard.innerHTML = `<div class="table-scroll"><table class="data-table"><thead><tr><th>Team</th><th>Status</th><th>Score</th><th>Total credits</th><th>Time</th></tr></thead><tbody>${scores.map(team => `<tr><td>${esc(team.player)}</td><td>${esc(team.status || "IN PROGRESS")}</td><td>${pct(team.score)}</td><td>${number(team.credits)}</td><td>${formatTime(team.timeTakenSeconds)}</td></tr>`).join("")}</tbody></table></div>`;
+  qualityScoreboard.innerHTML = `<div class="table-scroll"><table class="data-table"><thead><tr><th>Team</th><th>Status</th><th>Score</th><th>Round credits</th><th>Overall credits</th><th>Time</th></tr></thead><tbody>${scores.map(team => { const featureCredits = number(scoreFor(team.player, "features")?.credits); const overallCredits = featureCredits + number(team.credits); return `<tr><td>${esc(team.player)}</td><td>${esc(team.status || "IN PROGRESS")}</td><td>${pct(team.score)}</td><td>${number(team.credits)}</td><td>${overallCredits}/${OVERALL_CREDIT_BUDGET}</td><td>${formatTime(team.timeTakenSeconds)}</td></tr>`; }).join("")}</tbody></table></div>`;
 }
 
 function renderActivity() {

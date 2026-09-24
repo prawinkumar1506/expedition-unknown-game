@@ -27,7 +27,8 @@ test("Round 4 exposes five ensemble and five regular models with proportional ti
     if (config.kind === "ensemble") { assert.equal(full.cost, 50); assert.equal(full.targetSeconds, 1050); }
     else { assert.equal(full.cost, 28); assert.equal(full.targetSeconds, 570); }
     const code = buildKaggleScript({ model: name, features });
-    assert.ok(code.includes(config.classifier));
+    assert.ok(code.includes(`# Classic ${name} model.`));
+    assert.ok(code.includes("classifier = "));
     assert.ok(code.includes('PARAMETERS = json.loads('));
   }
   assert.ok(570 >= 1050 / 2);
