@@ -1,10 +1,11 @@
 import { clean, json } from "./_gateway.js";
 import { assignment, hash } from "./_event.js";
 import { packState, verifyState } from "./_state.js";
+import { ROUND4, searchPlan } from "../public/round4-config.js";
 
 const COSTS = { missing: 3, outlier: 3 };
 const LIMITS = { missing: 10, outlier: 10 };
-const BUDGET = 50;
+const BUDGET = ROUND4.creditBudget;
 const unique = values => [...new Set(Array.isArray(values) ? values.map(value => String(value || "").slice(0, 64)) : [])];
 
 export function buildQualityPlan(event, features, room = "fixed") {
@@ -87,12 +88,22 @@ export default function handler(req, res) {
     const plan = buildQualityPlan(event, featureState.selected, room);
     const timeTakenSeconds = Number(req.body?.timeTakenSeconds || 0);
     if (action === "plan") return json(res, 200, { plan, lockedFeatures: featureState.selected });
-    if (action !== "seal") return json(res, 400, { error: "Choose plan or seal." });
+    if (!["seal", "charge"].includes(action)) return json(res, 400, { error: "Choose plan, seal, or charge." });
     const { repairs, methods, spend } = validateRepairs(plan, { ...req.body?.repairs, missingMethods: req.body?.missingMethods, outlierMethods: req.body?.outlierMethods }), qualityScore = scoreRepairPlan(plan, repairs);
     const qualityState = packState("quality", { room, player, features: featureState.selected, featureScore: featureState.score, qualityScore, repairs, methods, repairSpend: spend, timeTakenSeconds });
-    return json(res, 200, { sealed: true, features: featureState.selected, featureScore: featureState.score, qualityScore, repairSpend: spend, repairBudget: BUDGET, methods, timeTakenSeconds, qualityState, message: `Cleaning plan sealed: ${spend}/${BUDGET} repair credits spent, repair effectiveness ${qualityScore}/100.` });
+    const base = { sealed: true, features: featureState.selected, featureScore: featureState.score, qualityScore, repairSpend: spend, creditBudget: BUDGET, methods, timeTakenSeconds, qualityState, message: `Cleaning plan sealed: ${spend} credits assigned to repairs, repair effectiveness ${qualityScore}/100.` };
+    if (action === "seal") return json(res, 200, base);
+
+    const model = String(req.body?.model || ""), search = searchPlan(model, req.body?.ranges || {});
+    const ledger = req.body?.round4CreditState ? verifyState(req.body.round4CreditState, "round4credits", room, player) : { spent: 0, purchases: 0 };
+    const previousSpent = Number(ledger.spent || 0), experimentSpend = spend + search.cost;
+    if (!Number.isFinite(previousSpent) || previousSpent < 0 || previousSpent > BUDGET) throw new Error("INVALID_STATE");
+    if (previousSpent + experimentSpend > BUDGET) throw new Error(`This experiment costs ${experimentSpend} credits, but only ${BUDGET - previousSpent} remain in the shared Round 4 wallet.`);
+    const creditsSpent = previousSpent + experimentSpend, purchases = Number(ledger.purchases || 0) + 1;
+    const round4CreditState = packState("round4credits", { room, player, spent: creditsSpent, purchases });
+    return json(res, 200, { ...base, searchSpend: search.cost, experimentSpend, creditsSpent, creditsRemaining: BUDGET - creditsSpent, round4CreditState });
   } catch (error) {
-    const message = ["STATE_REQUIRED", "INVALID_STATE"].includes(error.message) ? "The Feature Hunt seal could not be verified. Reload the mission." : error.message;
+    const message = ["STATE_REQUIRED", "INVALID_STATE"].includes(error.message) ? "The signed round state could not be verified. Reload the mission." : error.message;
     return json(res, 409, { error: message });
   }
 }

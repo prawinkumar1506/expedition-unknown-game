@@ -8,7 +8,7 @@ const box = document.querySelector("#workspace"), download = document.querySelec
 const featureCredit = document.querySelector("#f-credit"), repairCredit = document.querySelector("#r-credit"), evaluationCredit = document.querySelector("#e-credit"), stageTimers = document.querySelector("#stage-timers");
 const stageOrder = ["event1", "manual", "features", "quality"];
 const analysisCatalog = [
-  ["classprofiles", "Class profiles", 2, "See whether a sensor changes enough across traffic situations to be useful."],
+  ["classprofiles", "Class profiles", 3, "See whether a sensor changes enough across traffic situations to be useful."],
   ["correlation", "Correlation analysis", 2, "Compare two sensors and check whether they may be giving you repeated information."]
 ];
 const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -18,12 +18,13 @@ let data, stage = "event1", highestStage = 0;
 let manualLabels = {}, manualLocked = false, manualState = "", manualResult = null, manualStatus = "";
 let manualTimeSpentSec = 0, manualTimerId = null, manualTimerStart = 0;
 let event1Result = null, event1Status = "", event1TimeSpentSec = 0, event1TimerId = null, event1TimerStart = 0, event1Selections = [];
-let selectedFeatures = new Set(), analysisType = "classprofiles", analysisFeature = "", analysisSecond = "", analysisState = "", analysisCredits = 10, findings = [], featureState = "", featureResult = null, featureStatus = "";
+let selectedFeatures = new Set(), analysisType = "classprofiles", analysisFeature = "", analysisSecond = "", analysisState = "", analysisCredits = 75, findings = [], featureState = "", featureResult = null, featureStatus = "";
 let featureTimeSpentSec = 0, featureTimerId = null, featureTimerStart = 0;
 let qualityPlan = null, repairs = { missingColumns: new Set(), outlierColumns: new Set() }, repairMethods = { missing: {}, outlier: {} }, qualityState = "", qualityResult = null, qualityStatus = "";
 let qualityTimeSpentSec = 0, qualityTimerId = null, qualityTimerStart = 0;
 let model = "Random Forest", tuning = normalizeTuning(), hyperparameters = {}, forecastRuns = [], kaggleScript = "", forecastStatus = "", forecastLocked = false;
 let forecastTimeSpentSec = 0, forecastTimerId = null, forecastTimerStart = 0;
+let round4CreditState = "";
 let roomControl = { stageUnlocks: { global: ["event1"], players: {} }, stageDurations: { manual: 20 * 60 } }, checkpointTimer = null;
 const FEATURE_TIMEOUT_SECONDS = 30 * 60;
 const QUALITY_TIMEOUT_SECONDS = ROUND4.durationSeconds;
@@ -31,7 +32,6 @@ const ROUND4_TIMEOUT_SECONDS = QUALITY_TIMEOUT_SECONDS;
 const EVENT1_TIMEOUT_SECONDS = 15 * 60;
 const FORECAST_TIMEOUT_SECONDS = ROUND4_TIMEOUT_SECONDS;
 const stageStorageKey = `clearway-progress:${session?.room || "unknown"}:${session?.player || "unknown"}`;
-const REPAIR_BUDGET = ROUND4.repairBudget;
 let generatingNotebook = false, kaggleSubmitted = false;
 const EVENT1_ARCHIVE_CANDIDATES = [
   "JTU7_stream_A_core_20260314_0314_gen1.csv",
@@ -76,20 +76,21 @@ const shuffledForTeam = values => {
 };
 const generateKaggleWindowExpired = () => Boolean(qualityTimerStart && Date.now() - qualityTimerStart >= ROUND4_TIMEOUT_SECONDS * 1000);
 const round4Closed = () => forecastLocked || qualityResult?.status === "COMPLETED" || generateKaggleWindowExpired();
-const searchCreditsRemaining = () => Math.max(0, ROUND4.searchBudget - modelSpend());
 const round4Elapsed = () => qualityTimerStart ? Math.max(0, Math.floor((Date.now() - qualityTimerStart) / 1000)) : 0;
 const modelSpend = () => forecastRuns.reduce((sum, run) => sum + Number(run.cost || 0), 0);
 const repairSpend = () => forecastRuns.reduce((sum, run) => sum + Number(run.repairCost || 0), 0);
-const event4CreditsRemaining = () => Math.max(0, REPAIR_BUDGET - repairSpend());
+const round4Spend = () => modelSpend() + repairSpend();
+const round4CreditsRemaining = () => Math.max(0, ROUND4.creditBudget - round4Spend());
 const stageIsUnlocked = name => roomControl.stageUnlocks?.global?.includes(name) || roomControl.stageUnlocks?.players?.[session.player]?.includes(name);
-const serializeState = () => ({ stage, highestStage, stageStartedAt: { event1: event1TimerStart, manual: manualTimerStart, features: featureTimerStart, quality: qualityTimerStart, forecast: forecastTimerStart }, manualLabels, manualLocked, manualState, manualResult, event1Result, event1Selections, analysisState, analysisCredits, findings, selectedFeatures: [...selectedFeatures], featureState, featureResult, qualityPlan, repairs: Object.fromEntries(Object.entries(repairs).map(([key, value]) => [key, [...value]])), repairMethods, qualityState, qualityResult, model, tuning, hyperparameters, forecastRuns, kaggleScript, forecastStatus, forecastLocked, kaggleSubmitted });
+const serializeState = () => ({ stage, highestStage, stageStartedAt: { event1: event1TimerStart, manual: manualTimerStart, features: featureTimerStart, quality: qualityTimerStart, forecast: forecastTimerStart }, stageElapsed: { features: featureTimeSpentSec }, manualLabels, manualLocked, manualState, manualResult, event1Result, event1Selections, analysisState, analysisCredits, findings, selectedFeatures: [...selectedFeatures], featureState, featureResult, qualityPlan, repairs: Object.fromEntries(Object.entries(repairs).map(([key, value]) => [key, [...value]])), repairMethods, qualityState, qualityResult, model, tuning, hyperparameters, forecastRuns, round4CreditState, kaggleScript, forecastStatus, forecastLocked, kaggleSubmitted });
 const applyState = saved => {
   if (!saved || typeof saved !== "object") return;
   stage = saved.stage === "forecast" ? "quality" : (saved.stage || stage); highestStage = Number(saved.highestStage || 0); manualLabels = saved.manualLabels || {}; manualLocked = Boolean(saved.manualLocked); manualState = saved.manualState || ""; manualResult = saved.manualResult || null; event1Result = saved.event1Result || null; event1Selections = saved.event1Selections || [];
-  analysisState = saved.analysisState || ""; analysisCredits = Number(saved.analysisCredits ?? 10); findings = saved.findings || []; selectedFeatures = new Set(saved.selectedFeatures || []); featureState = saved.featureState || ""; featureResult = saved.featureResult || null; qualityPlan = saved.qualityPlan || null;
+  analysisState = saved.analysisState || ""; analysisCredits = Number(saved.analysisCredits ?? 75); findings = saved.findings || []; selectedFeatures = new Set(saved.selectedFeatures || []); featureState = saved.featureState || ""; featureResult = saved.featureResult || null; qualityPlan = saved.qualityPlan || null;
   repairs = { missingColumns: new Set(saved.repairs?.missingColumns || []), outlierColumns: new Set(saved.repairs?.outlierColumns || []) }; repairMethods = saved.repairMethods || { missing: {}, outlier: {} };
-  qualityState = saved.qualityState || ""; qualityResult = saved.qualityResult || null; model = Object.hasOwn(modelCatalog, saved.model) ? saved.model : "Random Forest"; tuning = saved.tuning || tuning; hyperparameters = saved.hyperparameters || {}; forecastRuns = Array.isArray(saved.forecastRuns) ? saved.forecastRuns : []; kaggleScript = saved.kaggleScript || ""; forecastStatus = saved.forecastStatus || ""; forecastLocked = Boolean(saved.forecastLocked); kaggleSubmitted = Boolean(saved.kaggleSubmitted);
+  qualityState = saved.qualityState || ""; qualityResult = saved.qualityResult || null; model = Object.hasOwn(modelCatalog, saved.model) ? saved.model : "Random Forest"; tuning = saved.tuning || tuning; hyperparameters = saved.hyperparameters || {}; forecastRuns = Array.isArray(saved.forecastRuns) ? saved.forecastRuns : []; round4CreditState = saved.round4CreditState || ""; kaggleScript = saved.kaggleScript || ""; forecastStatus = saved.forecastStatus || ""; forecastLocked = Boolean(saved.forecastLocked); kaggleSubmitted = Boolean(saved.kaggleSubmitted);
   const starts = saved.stageStartedAt || {}; event1TimerStart = Number(starts.event1 || 0); manualTimerStart = Number(starts.manual || 0); featureTimerStart = Number(starts.features || 0); qualityTimerStart = Number(starts.quality || 0); forecastTimerStart = Number(starts.forecast || 0);
+  featureTimeSpentSec = Number(saved.stageElapsed?.features ?? featureResult?.timeTakenSeconds ?? 0);
   // Recover from partially persisted stage transitions. A successfully sealed
   // stage is stronger evidence than a stale highestStage counter.
   if (event1Result) highestStage = Math.max(highestStage, 1);
@@ -206,7 +207,7 @@ const saveQualityResult = async result => {
     points: Number(featureResult?.pointsEarned || 0),
     maxPoints: Number(featureResult?.maxPoints || 20),
     score: Number(result.qualityScore ?? result.featureScore ?? featureResult?.score ?? 0),
-    credits: repairSpend() + modelSpend(),
+    credits: round4Spend(),
     timeTakenSeconds: Number(result.timeTakenSeconds || qualityTimeSpentSec),
     status: result.status || "IN_PROGRESS",
     submittedAt: Date.now()
@@ -288,7 +289,11 @@ const startManualTimer = () => {
 };
 
 const startFeatureTimer = () => {
-  if (featureResult || featureTimerId) clearInterval(featureTimerId);
+  if (featureTimerId) clearInterval(featureTimerId);
+  if (featureResult) {
+    featureTimerId = null;
+    return;
+  }
   if (!featureTimerStart || featureTimerStart > Date.now()) featureTimerStart = Date.now();
   featureTimerId = setInterval(() => {
     featureTimeSpentSec = Math.min(FEATURE_TIMEOUT_SECONDS, Math.max(0, Math.floor((Date.now() - featureTimerStart) / 1000)));
@@ -329,9 +334,9 @@ const startQualityTimer = () => {
     }
     document.querySelectorAll("#quality-timer-value, #forecast-timer-value").forEach(node => node.textContent = formatQualityCountdown());
     const finish = document.querySelector("#submit-event4");
-    if (finish) finish.disabled = round4Closed() || generatingNotebook || !kaggleSubmitted || !forecastRuns.length || qualityTimeSpentSec < ROUND4.minimumSeconds;
+    if (finish) finish.disabled = round4Closed() || generatingNotebook || !kaggleSubmitted;
     const opens = document.querySelector("#round4-finish-countdown");
-    if (opens) opens.textContent = qualityTimeSpentSec < ROUND4.minimumSeconds ? `Completion opens in ${formatCountdown(ROUND4.minimumSeconds - qualityTimeSpentSec)}` : "Completion is open. Submit your chosen CSV to Kaggle first.";
+    if (opens) opens.textContent = "Completion is open. Submit your chosen CSV to Kaggle first.";
   };
   qualityTimerId = setInterval(tick, 1000);
   tick();
@@ -381,9 +386,9 @@ function setStage(next) {
   stage = next; if (stage === "event1" && !event1Result) event1TimerStart = event1TimerStart || Date.now(); if (stage === "manual" && !manualResult) manualTimerStart = manualTimerStart || Date.now(); if (stage === "features" && !featureResult) featureTimerStart = featureTimerStart || Date.now(); if (stage === "quality" && !qualityResult) qualityTimerStart = qualityTimerStart || Date.now(); if (stage === "forecast") forecastTimerStart = forecastTimerStart || Date.now(); checkpoint(); render(); if (stage === "event1") startEvent1Timer(); if (stage === "manual") startManualTimer(); if (stage === "features") startFeatureTimer(); if (stage === "quality") { startQualityTimer(); if (!qualityPlan && featureState) request("/api/quality", { room: session.room, player: session.player, action: "plan", featureState }).then(result => { qualityPlan = result.plan; qualityStatus = "Event 4 loaded from your sealed Event 3 feature set."; checkpoint(); render(); }).catch(error => { qualityStatus = `Event 4 could not load the repair plan yet: ${error.message}`; render(); }); } if (stage === "forecast") startForecastTimer(); window.scrollTo({ top: 0, behavior: "smooth" });
 }
 function updateChrome() {
-  if (featureCredit) featureCredit.textContent = `${analysisCredits} / 10`;
-  if (repairCredit) repairCredit.textContent = `${event4CreditsRemaining()} / ${REPAIR_BUDGET}`;
-  if (evaluationCredit) evaluationCredit.textContent = `${searchCreditsRemaining()} / ${ROUND4.searchBudget}`;
+  if (featureCredit) featureCredit.textContent = `${analysisCredits} / 75`;
+  if (repairCredit) repairCredit.textContent = `${round4CreditsRemaining()} / ${ROUND4.creditBudget}`;
+  if (evaluationCredit) evaluationCredit.textContent = `${forecastRuns.length}`;
   if (stageTimers) { const [timerLabel, readTimer] = stageTimerReaders[stage] || ["E4", formatForecastCountdown]; stageTimers.innerHTML = `<span class="stage-timer-label">${timerLabel}</span><span class="stage-timer-value">${readTimer()}</span>`; }
   document.querySelectorAll("[data-stage]").forEach(button => { const index = stageOrder.indexOf(button.dataset.stage); button.classList.toggle("active", button.dataset.stage === stage); button.classList.toggle("is-active", button.dataset.stage === stage); button.disabled = index > highestStage || !stageIsUnlocked(button.dataset.stage); });
 }
@@ -425,25 +430,28 @@ function findingHtml(item) {
 function renderFeatures() {
   const config = analysisCatalog.find(item => item[0] === analysisType) || analysisCatalog[0], pair = analysisType === "correlation", nextStageOpen = stageIsUnlocked("quality");
   const orderedFeatures = displayFeatures();
-  return `${sectionIntro("3", "Feature Hunt", "Sixteen telemetry channels survived the Surge, but Central has only ten seats. Spend investigation credits, then lock exactly ten channels. That choice cannot be reopened.", ["Manual Override", "Feature Hunt", "Quality Lab", "Forecast"])}
-    <section class="incident-ribbon"><div><small>CANDIDATE CHANNELS</small><b>${data.features.length}</b></div><div><small>LOCKED INPUTS</small><b>Exactly 10</b></div><div><small>INVESTIGATION POOL</small><b>${analysisCredits}/10 credits</b></div><div><small>TRAIN ARCHIVE</small><b>${data.recordCounts.trainingDelivered} damaged rows</b></div><div><small>TIMER</small><b id="feature-timer-value">${formatFeatureCountdown()}</b></div></section>
-    <div class="investigation-shell"><aside class="tool-catalog"><div class="panel-title">Investigation menu <span>10-credit pool</span></div>${analysisCatalog.map(item => `<button data-analysis-type="${item[0]}" class="${analysisType === item[0] ? "active" : ""}" ${featureResult ? "disabled" : ""}><span><b>${esc(item[1])}</b><small>${esc(item[3])}</small></span><strong>${item[2]} CR</strong></button>`).join("")}</aside>
+  return `${sectionIntro("3", "Feature Hunt", `${data.features.length} telemetry channels survived the Surge, but only ten can enter the forecasting pipeline. Use investigation credits to compare how channels behave across traffic classes and identify redundant signals, then lock the ten channels you believe will produce the strongest model. Once locked, the selection is final.`, ["Manual Override", "Feature Hunt", "Quality Lab", "Forecast"])}
+    <section class="incident-ribbon"><div><small>CANDIDATE CHANNELS</small><b>${data.features.length}</b></div><div><small>LOCKED INPUTS</small><b>Exactly 10</b></div><div><small>INVESTIGATION POOL</small><b>${analysisCredits}/75 credits</b></div><div><small>TRAIN ARCHIVE</small><b>${data.recordCounts.trainingDelivered} damaged rows</b></div><div><small>TIMER</small><b id="feature-timer-value">${formatFeatureCountdown()}</b></div></section>
+    <div class="investigation-shell"><aside class="tool-catalog"><div class="panel-title">Investigation menu <span>75-credit pool</span></div>${analysisCatalog.map(item => `<button data-analysis-type="${item[0]}" class="${analysisType === item[0] ? "active" : ""}" ${featureResult ? "disabled" : ""}><span><b>${esc(item[1])}</b><small>${esc(item[3])}</small></span><strong>${item[2]} CR</strong></button>`).join("")}</aside>
       <section class="evidence-console"><div class="panel-title">Analysis console <span>${esc(config[1])}</span></div><div class="analysis-config"><div><span>SELECTED TOOL</span><b>${esc(config[1])}</b><p>${esc(config[3])}</p></div><label>Primary channel<select id="analysis-feature">${data.features.map(name => `<option value="${name}" ${analysisFeature === name ? "selected" : ""}>${esc(featureName(name))}</option>`).join("")}</select></label>${pair ? `<label>Comparison channel<select id="analysis-second">${data.features.filter(name => name !== analysisFeature).map(name => `<option value="${name}" ${analysisSecond === name ? "selected" : ""}>${esc(featureName(name))}</option>`).join("")}</select></label>` : ""}<button id="run-analysis" class="btn btn--primary" ${featureResult || analysisCredits < config[2] ? "disabled" : ""}>Run · ${config[2]} credits</button></div><div class="analysis-status">${esc(featureStatus || "Purchased evidence can be reopened without spending again.")}</div><div class="findings">${findings.length ? findings.map(findingHtml).join("") : `<div class="empty-finding"><b>NO INVESTIGATION PURCHASED</b><span>Choose a tool and spend credits to reveal evidence.</span></div>`}</div></section></div>
-    <section class="selection-board"><div class="panel-title">Ten-feature lock <span>${selectedFeatures.size}/10 selected</span></div><div class="pick-grid">${orderedFeatures.map(name => `<button class="pick feature ${selectedFeatures.has(name) ? "chosen" : ""}" data-feature="${name}" ${featureResult ? "disabled" : ""}><b>${selectedFeatures.has(name) ? "✓" : "+"}</b><span>${esc(featureName(name))}<small>${esc(featureFamily(name))} channel</small></span></button>`).join("")}</div>${featureResult ? `<div class="feature-score"><strong>${featureResult.score}</strong><span>EVENT 3 SCORE</span><div><small>High-value seats</small><b>${featureResult.strongCount}/10</b></div><div><small>Credits spent</small><b>${featureResult.spent}/10</b></div></div><div class="stage-actions"><span class="recovery-message success">${esc(featureResult.message)}</span><button class="btn btn--primary" data-next="quality" ${nextStageOpen ? "" : "disabled"}>→ ${nextStageOpen ? "Open Event 4" : "Waiting for host to open Event 4"}</button></div>` : `<div class="feature-lock"><span>${esc(featureStatus || "Investigate the available telemetry channels, then commit up to ten of them.")}</span><b>${selectedFeatures.size}/10</b><button id="lock-features" class="btn btn--primary">Lock selection</button></div>`}</section>`;
+    <section class="selection-board"><div class="panel-title">Ten-feature lock <span>${selectedFeatures.size}/10 selected</span></div><div class="pick-grid">${orderedFeatures.map(name => `<button class="pick feature ${selectedFeatures.has(name) ? "chosen" : ""}" data-feature="${name}" ${featureResult ? "disabled" : ""}><b>${selectedFeatures.has(name) ? "✓" : "+"}</b><span>${esc(featureName(name))}<small>${esc(featureFamily(name))} channel</small></span></button>`).join("")}</div>${featureResult ? `<div class="feature-score"><strong>${featureResult.score}</strong><span>EVENT 3 SCORE</span><div><small>High-value seats</small><b>${featureResult.strongCount}/10</b></div><div><small>Credits spent</small><b>${featureResult.spent}/75</b></div></div><div class="stage-actions"><span class="recovery-message success">${esc(featureResult.message)}</span><button class="btn btn--primary" data-next="quality" ${nextStageOpen ? "" : "disabled"}>→ ${nextStageOpen ? "Open Event 4" : "Waiting for host to open Event 4"}</button></div>` : `<div class="feature-lock"><span>${esc(featureStatus || "Investigate the available telemetry channels, then commit up to ten of them.")}</span><b>${selectedFeatures.size}/10</b><button id="lock-features" class="btn btn--primary">Lock selection</button></div>`}</section>`;
 }
 
 const sealFeatureRound = async () => {
   if (featureResult) return;
   try {
     const sealed = await request("/api/features", { room: session.room, player: session.player, features: [...selectedFeatures], analysisState });
-    featureResult = sealed;
+    featureTimeSpentSec = Math.min(FEATURE_TIMEOUT_SECONDS, Math.max(0, Math.floor((Date.now() - featureTimerStart) / 1000)));
+    clearInterval(featureTimerId);
+    featureTimerId = null;
+    featureResult = { ...sealed, timeTakenSeconds: featureTimeSpentSec };
     featureState = sealed.featureState;
     highestStage = Math.max(highestStage, 3);
     featureStatus = sealed.message;
     checkpoint();
     render();
     const followUps = await Promise.allSettled([
-      saveFeatureResult(sealed),
+      saveFeatureResult(featureResult),
       request("/api/quality", { room: session.room, player: session.player, action: "plan", featureState })
     ]);
     const scoreResult = followUps[0], planResult = followUps[1];
@@ -487,13 +495,8 @@ const sealQualityRound = async () => {
 };
 
 const submitEvent4 = async () => {
-  if (round4Closed() || generatingNotebook || round4Elapsed() < ROUND4.minimumSeconds || !kaggleSubmitted) {
-    forecastStatus = "Complete at least 60 minutes of the lab and upload your chosen submission.csv to Kaggle before recording completion.";
-    render();
-    return;
-  }
-  if (!forecastRuns.length) {
-    forecastStatus = "Generate the model notebook before submitting Event 4.";
+  if (round4Closed() || generatingNotebook || !kaggleSubmitted) {
+    forecastStatus = "Upload your chosen submission.csv to Kaggle before recording completion.";
     render();
     return;
   }
@@ -528,11 +531,12 @@ function repairCards(kind, items) {
 }
 function renderQuality() {
   if (!qualityPlan) return `<section class="card"><div class="loading">Loading Round 4 repair options…</div></section>`;
+  const currentPlanCost = searchPlan(model, hyperparameters[model]).cost + currentRepairSpend();
   return `<div class="round4-lab">
-    <section class="r4-hero"><div><span class="r4-eyebrow">ROUND 04 / THE FINAL FORECAST</span><h1>Build. Compare. <em>Commit.</em></h1><p>Repair your telemetry. Explore five ensemble and five regular models. Turn the strongest experiment into your Kaggle submission.</p></div><div class="r4-clock"><span>LAB TIME REMAINING</span><strong id="quality-timer-value">${formatQualityCountdown()}</strong><small>90-minute lab · completion after 60 min</small></div></section>
-    <div class="r4-wallets"><div><span>REPAIR WALLET</span><b>${event4CreditsRemaining()} <small>/ ${REPAIR_BUDGET} CR</small></b><p>${repairSpend()} spent · ${currentRepairSpend()} CR in the current plan</p></div><div><span>SEARCH WALLET</span><b>${searchCreditsRemaining()} <small>/ ${ROUND4.searchBudget} CR</small></b><p>${modelSpend()} spent · ${forecastRuns.length} notebooks generated</p></div><div><span>YOUR MISSION</span><b>${data.recordCounts.finalTest} <small>predictions</small></b><p>Macro F1 · final standings on Kaggle</p></div></div>
+    <section class="r4-hero"><div><span class="r4-eyebrow">ROUND 04 / THE FINAL FORECAST</span><h1>Build. Compare. <em>Commit.</em></h1><p>Repair your telemetry. Explore five ensemble and five regular models. Turn the strongest experiment into your Kaggle submission.</p></div><div class="r4-clock"><span>LAB TIME REMAINING</span><strong id="quality-timer-value">${formatQualityCountdown()}</strong><small>90-minute lab · submit whenever ready</small></div></section>
+    <div class="r4-wallets"><div><span>ROUND 4 WALLET</span><b>${round4CreditsRemaining()} <small>/ ${ROUND4.creditBudget} CR</small></b><p>${round4Spend()} spent · ${currentPlanCost} CR in the current experiment</p></div><div><span>NOTEBOOKS GENERATED</span><b>${forecastRuns.length}</b><p>Each new notebook charges its model search and selected repairs together.</p></div><div><span>YOUR MISSION</span><b>${data.recordCounts.finalTest} <small>predictions</small></b><p>Macro F1 · final standings on Kaggle</p></div></div>
     <div class="r4-roadmap"><span><b>01</b> Repair & plan <small>10–15 min</small></span><span><b>02</b> Search & compare <small>45–60 min</small></span><span><b>03</b> Submit to Kaggle <small>10–15 min</small></span></div>
-    <section class="r4-panel"><div class="r4-heading"><div><span class="r4-eyebrow">01 / DATA QUALITY</span><h2>Make each repair count</h2></div><span class="r4-pill">3 CR per column & operation</span></div><p class="r4-muted">Your repair wallet is separate from model search. Edit the plan between experiments; each notebook keeps its own snapshot. Unselected missing cells use zero. Purchased methods learn from training folds only.</p>
+    <section class="r4-panel"><div class="r4-heading"><div><span class="r4-eyebrow">01 / DATA QUALITY</span><h2>Make each repair count</h2></div><span class="r4-pill">3 CR per column & operation</span></div><p class="r4-muted">Repairs and model search draw from the same 200-credit Round 4 wallet. Edit the plan between experiments; each notebook keeps its own snapshot. Unselected missing cells use zero. Purchased methods learn from training folds only.</p>
       <details class="r4-repair-group"><summary>Missing values <span>${repairs.missingColumns.size}/${qualityPlan.limits.missing} selected</span></summary><div class="r4-repairs">${repairCards("missing", qualityPlan.missingColumns)}</div></details><details class="r4-repair-group"><summary>Outlier treatment <span>${repairs.outlierColumns.size}/${qualityPlan.limits.outlier} selected</span></summary><div class="r4-repairs">${repairCards("outlier", qualityPlan.outlierColumns)}</div></details>
       <p class="r4-status" role="status">${esc(qualityStatus)}</p></section>
     ${renderForecast()}</div>`;
@@ -543,19 +547,19 @@ function rangeControls() {
   return Object.entries(modelCatalog[model].parameters).map(([key, parameter]) => `<label class="r4-slider"><span><b>${esc(parameter.label)}</b><output data-range-output="${key}">${plan.levels[key]}/${parameter.values.length} values</output></span><input type="range" min="1" max="${parameter.values.length}" step="1" value="${plan.levels[key]}" data-hyperparameter="${key}" aria-label="${esc(parameter.label)} search range" aria-valuetext="${esc(plan.parameters[key].map(value => value ?? "unlimited").join(", "))}" ${round4Closed() || generatingNotebook ? "disabled" : ""}><span class="r4-range-ends"><small>${parameter.values[0]} only</small><small>Full range</small></span><small class="r4-range-values" data-range-values="${key}">${plan.parameters[key].map(value => value ?? "unlimited").join(" · ")}</small></label>`).join("");
 }
 function runSummary() {
-  const plan = searchPlan(model, hyperparameters[model]), remaining = searchCreditsRemaining(), repairCost = currentRepairSpend(), repairRemaining = event4CreditsRemaining(), minutes = (plan.targetSeconds / 60).toFixed(1);
-  const insufficientSearch = remaining < plan.cost, insufficientRepair = repairRemaining < repairCost;
-  return `<span class="r4-eyebrow">THIS EXPERIMENT</span><h3>${esc(model)}</h3><div class="r4-run-price">${plan.cost}<small> CR</small></div><dl><div><dt>Target runtime</dt><dd>~${minutes} min</dd></div><div><dt>Search space</dt><dd>${plan.combinations} configurations</dd></div><div><dt>Validation</dt><dd>${plan.folds}-fold Macro F1</dd></div><div><dt>Model wallet after run</dt><dd>${remaining - plan.cost} CR</dd></div><div><dt>Repair wallet after run</dt><dd>${repairRemaining - repairCost} CR</dd></div></dl><p>Wider sliders unlock more values, more search time, and higher credit costs. The notebook samples the space; it may not visit every combination.</p><p class="r4-muted">Real CV work, including repeated folds for narrow ranges. Runtime is approximate; the current trial and final refit must finish.</p><button id="generate-kaggle" class="btn btn--primary" ${round4Closed() || generatingNotebook || insufficientSearch || insufficientRepair ? "disabled" : ""}>${round4Closed() ? "Lab closed" : generatingNotebook ? "Preparing notebook…" : insufficientSearch ? "Not enough search credits" : insufficientRepair ? "Not enough repair credits" : `Download experiment · ${plan.cost} model CR + ${repairCost} repair CR`}</button><small>Both wallets are charged once per new notebook. Re-downloads are free.</small>`;
+  const plan = searchPlan(model, hyperparameters[model]), remaining = round4CreditsRemaining(), repairCost = currentRepairSpend(), totalCost = plan.cost + repairCost, minutes = (plan.targetSeconds / 60).toFixed(1);
+  const insufficientCredits = remaining < totalCost;
+  return `<span class="r4-eyebrow">THIS EXPERIMENT</span><h3>${esc(model)}</h3><div class="r4-run-price">${totalCost}<small> CR</small></div><dl><div><dt>Target runtime</dt><dd><strong>~${minutes} min</strong></dd></div><div><dt>Search space</dt><dd>${plan.combinations} configurations</dd></div><div><dt>Validation</dt><dd>${plan.folds}-fold Macro F1</dd></div><div><dt>Model search</dt><dd>${plan.cost} CR</dd></div><div><dt>Selected repairs</dt><dd>${repairCost} CR</dd></div><div><dt>Wallet after run</dt><dd>${remaining - totalCost} CR</dd></div></dl><p>Wider sliders unlock more values, more search time, and higher credit costs. The notebook samples the space; it may not visit every combination.</p><p class="r4-muted">Real CV work, including repeated folds for narrow ranges. Runtime is approximate; the current trial and final refit must finish.</p><button id="generate-kaggle" class="btn btn--primary" ${round4Closed() || generatingNotebook || insufficientCredits ? "disabled" : ""}>${round4Closed() ? "Lab closed" : generatingNotebook ? "Preparing notebook…" : insufficientCredits ? "Not enough Round 4 credits" : `Download experiment · ${totalCost} CR total`}</button><small>The shared 200-credit wallet is charged once per new notebook. Re-downloads are free.</small>`;
 }
 function renderForecast() {
-  const closed = round4Closed(), elapsed = round4Elapsed(), config = modelCatalog[model];
+  const closed = round4Closed(), config = modelCatalog[model];
   const levelsFor = value => Object.fromEntries(Object.keys(config.parameters).map(key => [key, value]));
   const focused = searchPlan(model, levelsFor(1)), balanced = searchPlan(model, levelsFor(2)), full = searchPlan(model, levelsFor(99));
   return `<section class="r4-panel"><div class="r4-heading"><div><span class="r4-eyebrow">02 / MODEL WORKBENCH</span><h2>Choose your model</h2></div><span class="r4-pill">5 ensemble · 5 regular</span></div><div class="r4-models">${Object.entries(modelCatalog).map(([name, item], index) => `<button class="r4-model ${name === model ? "selected" : ""}" data-model="${name}" aria-pressed="${name === model}" ${closed || generatingNotebook ? "disabled" : ""}><span>${String(index + 1).padStart(2, "0")} / ${item.kind.toUpperCase()} · ${item.family}</span><b>${name}</b><small>${item.description}</small><i>${name === model ? "Selected ✓" : "Explore model →"}</i></button>`).join("")}</div></section>
     <section class="r4-workbench"><div class="r4-panel"><div class="r4-heading"><div><span class="r4-eyebrow">SEARCH DESIGN</span><h2>How far will you explore?</h2></div></div><p class="r4-muted">Each slider grows a real hyperparameter range. This ${config.kind} model targets ~${(focused.targetSeconds / 60).toFixed(1)} min focused, ~${(balanced.targetSeconds / 60).toFixed(1)} min balanced, and ~${(full.targetSeconds / 60).toFixed(1)} min at full range. Fast models repeat shuffled CV cycles instead of idling.</p><div class="r4-presets">${[[1,"Focused"],[2,"Balanced"],[99,"Full range"]].map(([value,label]) => `<button data-range-preset="${value}" ${closed || generatingNotebook ? "disabled" : ""}>${label}</button>`).join("")}</div><div class="r4-sliders">${rangeControls()}</div><label class="r4-seed">Random seed<input id="tuning-seed" type="number" min="0" max="999999" value="${normalizeTuning(tuning).randomState}" ${closed || generatingNotebook ? "disabled" : ""}></label></div><aside class="r4-run-summary" id="round4-run-summary">${runSummary()}</aside></section>
     <p class="r4-status" role="status">${esc(forecastStatus)}</p>
-    <section class="r4-panel"><div class="r4-heading"><div><span class="r4-eyebrow">EXPERIMENT LOG</span><h2>Your notebook history</h2></div><span class="r4-pill">${forecastRuns.length} generated</span></div>${forecastRuns.length ? `<div class="table-scroll"><table class="r4-history"><thead><tr><th>Model / generated</th><th>Target</th><th>Credits</th><th>Search ranges</th><th>Notebook</th></tr></thead><tbody>${forecastRuns.map((run, index) => `<tr><td><b>${esc(run.model)}</b><small>${new Date(run.createdAt).toLocaleTimeString()}</small></td><td>${run.targetSeconds ? `~${(run.targetSeconds / 60).toFixed(1)} min` : "Legacy"}</td><td>${run.cost} CR</td><td><details><summary>View snapshot</summary><p>${esc(Object.entries(run.parameters || {}).map(([key, values]) => `${key}: ${[].concat(values).map(value => value ?? "unlimited").join(", ")}`).join("; "))}</p><p>${esc(JSON.stringify(run.repairs || {}))}</p></details></td><td><button class="btn btn--ghost" data-redownload="${index}" ${run.notebook ? "" : "disabled"}>Download</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="r4-empty"><b>Your first experiment starts here.</b><p>Choose a model, set the ranges, and download its notebook. Run it in Kaggle or locally, then compare the evaluation files.</p></div>`}</section>
-    <section class="r4-panel r4-finish"><div><span class="r4-eyebrow">03 / FINAL HANDOFF</span><h2>${qualityResult?.status === "COMPLETED" ? "Round complete" : "Put your best run forward"}</h2><p>Run the notebook, download submission.csv, and upload it to the organizer’s Kaggle competition. Keep randomized_search_results.csv and best_model_evaluation.json as your experiment record.</p><p id="round4-finish-countdown">${closed ? "The lab is closed." : elapsed < ROUND4.minimumSeconds ? `Completion opens in ${formatCountdown(ROUND4.minimumSeconds - elapsed)}` : "Completion is open. Submit your chosen CSV to Kaggle first."}</p><label><input id="round4-kaggle-submitted" type="checkbox" ${kaggleSubmitted ? "checked" : ""} ${closed || generatingNotebook ? "disabled" : ""}> I have uploaded my chosen submission.csv to Kaggle.</label></div><button id="submit-event4" class="btn btn--primary" ${closed || generatingNotebook || !forecastRuns.length || !kaggleSubmitted || elapsed < ROUND4.minimumSeconds ? "disabled" : ""}>${qualityResult?.status === "COMPLETED" ? "Completion recorded" : "Record round complete"}</button></section>`;
+    <section class="r4-panel"><div class="r4-heading"><div><span class="r4-eyebrow">EXPERIMENT LOG</span><h2>Your notebook history</h2></div><span class="r4-pill">${forecastRuns.length} generated</span></div>${forecastRuns.length ? `<div class="table-scroll"><table class="r4-history"><thead><tr><th>Model / generated</th><th>Target</th><th>Credits</th><th>Search ranges</th><th>Notebook</th></tr></thead><tbody>${forecastRuns.map((run, index) => `<tr><td><b>${esc(run.model)}</b><small>${new Date(run.createdAt).toLocaleTimeString()}</small></td><td>${run.targetSeconds ? `~${(run.targetSeconds / 60).toFixed(1)} min` : "Legacy"}</td><td>${Number(run.totalCost ?? (Number(run.cost || 0) + Number(run.repairCost || 0)))} CR</td><td><details><summary>View snapshot</summary><p>${esc(Object.entries(run.parameters || {}).map(([key, values]) => `${key}: ${[].concat(values).map(value => value ?? "unlimited").join(", ")}`).join("; "))}</p><p>${esc(JSON.stringify(run.repairs || {}))}</p></details></td><td><button class="btn btn--ghost" data-redownload="${index}" ${run.notebook ? "" : "disabled"}>Download</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="r4-empty"><b>Your first experiment starts here.</b><p>Choose a model, set the ranges, and download its notebook. Run it in Kaggle or locally, then compare the evaluation files.</p></div>`}</section>
+    <section class="r4-panel r4-finish"><div><span class="r4-eyebrow">03 / FINAL HANDOFF</span><h2>${qualityResult?.status === "COMPLETED" ? "Round complete" : "Put your best run forward"}</h2><p>Run the notebook, download submission.csv, and upload it to the organizer’s Kaggle competition. Keep randomized_search_results.csv and best_model_evaluation.json as your experiment record.</p><p id="round4-finish-countdown">${closed ? "The lab is closed." : "Completion is open. Submit your chosen CSV to Kaggle first."}</p><label><input id="round4-kaggle-submitted" type="checkbox" ${kaggleSubmitted ? "checked" : ""} ${closed || generatingNotebook ? "disabled" : ""}> I have uploaded my chosen submission.csv to Kaggle.</label></div><button id="submit-event4" class="btn btn--primary" ${closed || generatingNotebook || !kaggleSubmitted ? "disabled" : ""}>${qualityResult?.status === "COMPLETED" ? "Completion recorded" : "Record round complete"}</button></section>`;
 }
 
 function render() {
@@ -571,7 +575,7 @@ function toggleRepair(kind, id) {
   const key = { missing: "missingColumns", outlier: "outlierColumns" }[kind], set = repairs[key], limit = qualityPlan.limits[kind], cost = qualityPlan.costs[kind];
   if (set.has(id)) set.delete(id);
   else if (set.size >= limit) qualityStatus = `That repair type is limited to ${limit} selections.`;
-  else if (currentRepairSpend() + cost > event4CreditsRemaining()) qualityStatus = `That repair would make this experiment cost more than the ${event4CreditsRemaining()} repair credits remaining.`;
+  else if (searchPlan(model, hyperparameters[model]).cost + currentRepairSpend() + cost > round4CreditsRemaining()) qualityStatus = `That repair would make the current experiment exceed the ${round4CreditsRemaining()} Round 4 credits remaining.`;
   else set.add(id);
   render();
 }
@@ -665,20 +669,28 @@ function bindGenerateNotebook() {
   button.onclick = async () => {
     if (round4Closed() || generatingNotebook) return;
     const chosenModel = model, plan = searchPlan(chosenModel, hyperparameters[chosenModel]);
-    if (searchCreditsRemaining() < plan.cost) return;
-    if (event4CreditsRemaining() < currentRepairSpend()) return;
+    const plannedRepairCost = currentRepairSpend(), plannedTotalCost = plan.cost + plannedRepairCost;
+    if (round4CreditsRemaining() < plannedTotalCost) return;
     const repairSnapshot = Object.fromEntries(Object.entries(repairs).map(([key, values]) => [key, [...values]]));
     const methodSnapshot = JSON.parse(JSON.stringify(repairMethods));
+    let content;
+    try {
+      content = buildKaggleScript({ model: chosenModel, features: featureResult?.selected || [], repairs: repairSnapshot, tuning: { ...normalizeTuning(tuning), ranges: plan.levels, repairMethods: methodSnapshot }, notebook: true });
+    } catch (error) {
+      forecastStatus = error.message;
+      render();
+      return;
+    }
     generatingNotebook = true; render();
     try {
-      const result = await request("/api/quality", { room: session.room, player: session.player, action: "seal", featureState, repairs: repairSnapshot, missingMethods: methodSnapshot.missing, outlierMethods: methodSnapshot.outlier });
-      if (round4Closed()) throw new Error("The lab closed before notebook generation completed. No search credits charged.");
+      const result = await request("/api/quality", { room: session.room, player: session.player, action: "charge", featureState, repairs: repairSnapshot, missingMethods: methodSnapshot.missing, outlierMethods: methodSnapshot.outlier, model: chosenModel, ranges: plan.levels, round4CreditState });
+      if (round4Closed()) throw new Error("The lab closed before notebook generation completed. No Round 4 credits charged.");
       const repairCost = Number(result.repairSpend || 0);
-      if (event4CreditsRemaining() < repairCost) throw new Error(`This experiment needs ${repairCost} repair credits, but only ${event4CreditsRemaining()} remain.`);
-      const content = buildKaggleScript({ model: chosenModel, features: result.features, repairs: repairSnapshot, tuning: { ...normalizeTuning(tuning), ranges: plan.levels, repairMethods: methodSnapshot }, notebook: true });
-      forecastRuns = [{ model: chosenModel, cost: plan.cost, repairCost, targetSeconds: plan.targetSeconds, parameters: plan.parameters, ranges: plan.levels, repairs: repairSnapshot, repairMethods: methodSnapshot, createdAt: Date.now(), notebook: content }, ...forecastRuns];
+      const searchCost = Number(result.searchSpend ?? plan.cost), totalCost = Number(result.experimentSpend ?? (searchCost + repairCost));
+      round4CreditState = result.round4CreditState || round4CreditState;
+      forecastRuns = [{ model: chosenModel, cost: searchCost, repairCost, totalCost, targetSeconds: plan.targetSeconds, parameters: plan.parameters, ranges: plan.levels, repairs: repairSnapshot, repairMethods: methodSnapshot, createdAt: Date.now(), notebook: content }, ...forecastRuns];
       qualityState = result.qualityState; qualityResult = null; kaggleSubmitted = false; kaggleScript = content; download.disabled = false;
-      forecastStatus = `${chosenModel} notebook ready. Run it to create submission.csv; target ${(plan.targetSeconds / 60).toFixed(1)} minutes.`;
+      forecastStatus = `${chosenModel} notebook ready. ${totalCost} credits charged from the shared Round 4 wallet. Run it to create submission.csv; target ${(plan.targetSeconds / 60).toFixed(1)} minutes.`;
       checkpoint(); downloadNotebook(content, chosenModel);
     } catch (error) { forecastStatus = error.message; }
     finally { generatingNotebook = false; render(); }
