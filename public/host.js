@@ -287,19 +287,33 @@ function playerScore(progress) {
 function renderStageControls() {
   if (!stageControls || !room) return;
   const global = room.stageUnlocks?.global || [];
+  const manualDuration = Math.max(60, number(room.stageDurations?.manual || 20 * 60));
   const globalButtons = stageOrder.map(stage => `<button class="btn btn--ghost" data-unlock-stage="${stage}">${global.includes(stage) ? "Unlocked" : "Unlock"} ${stageNames[stage]}</button>`).join(" ");
   const rows = room.players.map(player => {
     const progress = room.progress?.[player.name] || {};
     const unlocked = [...global, ...(room.stageUnlocks?.players?.[player.name] || [])];
     return `<tr><td>${esc(player.name)}</td><td>${esc(stageNames[progress.stage] || "Stage 1 · Archive")}</td><td>${currentTime(progress)}</td><td>${esc(playerScore(progress))}</td><td>${stageOrder.map(stage => `<button class="btn btn--ghost" data-unlock-stage="${stage}" data-unlock-player="${esc(player.name)}" ${unlocked.includes(stage) ? "disabled" : ""}>${unlocked.includes(stage) ? "OPEN" : `OPEN ${stageNames[stage]}`}</button>`).join(" ")}</td></tr>`;
   }).join("");
-  stageControls.innerHTML = `<div class="stage-actions">${globalButtons}</div><div class="table-scroll"><table class="data-table"><thead><tr><th>Team</th><th>Current stage</th><th>Stage time</th><th>Score</th><th>Individual unlock</th></tr></thead><tbody>${rows || '<tr><td colspan="5">No teams connected.</td></tr>'}</tbody></table></div>`;
+  stageControls.innerHTML = `<div class="stage-actions">${globalButtons}</div><div class="stage-actions"><strong>Stage 2 time: ${Math.round(manualDuration / 60)} min</strong><button class="btn btn--ghost" data-stage2-time="-60">−1 min</button><button class="btn btn--ghost" data-stage2-time="60">+1 min</button></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Team</th><th>Current stage</th><th>Stage time</th><th>Score</th><th>Individual unlock</th></tr></thead><tbody>${rows || '<tr><td colspan="5">No teams connected.</td></tr>'}</tbody></table></div>`;
   stageControls.querySelectorAll("[data-unlock-stage]").forEach(control => {
     control.onclick = async () => {
       control.disabled = true;
       try {
         show((await api({ action: "unlock", pin: room.pin, hostToken, stage: control.dataset.unlockStage, player: control.dataset.unlockPlayer || null })).room);
         message.textContent = "Stage access updated.";
+      } catch (error) {
+        message.textContent = error.message;
+        control.disabled = false;
+      }
+    };
+  });
+  stageControls.querySelectorAll("[data-stage2-time]").forEach(control => {
+    control.onclick = async () => {
+      control.disabled = true;
+      try {
+        const durationSeconds = Math.max(60, Math.min(7200, manualDuration + Number(control.dataset.stage2Time || 0)));
+        show((await api({ action: "setDuration", pin: room.pin, hostToken, stage: "manual", durationSeconds })).room);
+        message.textContent = `Stage 2 time set to ${Math.round(durationSeconds / 60)} minutes.`;
       } catch (error) {
         message.textContent = error.message;
         control.disabled = false;

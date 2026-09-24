@@ -21,7 +21,9 @@ const expose = (room, { host = false, player = null } = {}) => {
     if (row.player_name === null) stageUnlocks.global.push(row.stage);
     else if (host || row.player_name === player) (stageUnlocks.players[row.player_name] ||= []).push(row.stage);
   }
-  return { pin: room.pin, status: room.status, missionSeed: room.mission_seed, players, stageUnlocks, progress, scores, activity };
+  const stageDurations = { manual: 20 * 60 };
+  for (const row of database.prepare("SELECT stage, duration_seconds AS durationSeconds FROM game_stage_settings WHERE room_pin = ?").all(room.pin)) stageDurations[row.stage] = row.durationSeconds;
+  return { pin: room.pin, status: room.status, missionSeed: room.mission_seed, players, stageUnlocks, stageDurations, progress, scores, activity };
 };
 const requireRoom = body => {
   const roomPin = clean(body.pin, 6);
@@ -51,6 +53,7 @@ export default async function handler(req, res) {
     if (action === "start") { if (req.body.hostToken !== room.host_token) return json(res, 409, { error: "Only the room host can start this game" }); database.prepare("UPDATE game_rooms SET status = 'started' WHERE pin = ?").run(roomPin); logActivity(roomPin, null, "room_started", {}); return json(res, 200, { room: expose(roomRow(roomPin), { host: true }) }); }
     if (action === "saveProgress") { const player = clean(req.body?.player, 20), progress = req.body?.progress; if (!player || !progress || typeof progress !== "object") return json(res, 400, { error: "player progress required" }); if (!database.prepare("SELECT 1 FROM game_players WHERE room_pin = ? AND name = ?").get(roomPin, player)) return json(res, 409, { error: "Player is not in this room" }); database.prepare("INSERT INTO game_progress (room_pin, player_name, payload, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(room_pin, player_name) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at").run(roomPin, player, JSON.stringify(progress), Date.now()); return json(res, 200, { room: expose(roomRow(roomPin), { player }) }); }
     if (action === "unlock") { if (req.body.hostToken !== room.host_token) return json(res, 409, { error: "Only the room host can unlock stages" }); const stage = clean(req.body.stage, 20), player = req.body.player ? clean(req.body.player, 20) : null; if (!stages.has(stage)) return json(res, 400, { error: "invalid stage" }); database.prepare("INSERT OR IGNORE INTO game_stage_unlocks (room_pin, stage, player_name, unlocked_at) VALUES (?, ?, ?, ?)").run(roomPin, stage, player, Date.now()); return json(res, 200, { room: expose(roomRow(roomPin), { host: true }) }); }
+    if (action === "setDuration") { if (req.body.hostToken !== room.host_token) return json(res, 409, { error: "Only the room host can change stage time" }); const stage = clean(req.body.stage, 20), durationSeconds = Math.round(Number(req.body.durationSeconds)); if (stage !== "manual") return json(res, 400, { error: "Only Stage 2 time can be adjusted" }); if (!Number.isFinite(durationSeconds) || durationSeconds < 60 || durationSeconds > 7200) return json(res, 400, { error: "Stage 2 time must be between 1 and 120 minutes" }); database.prepare("INSERT INTO game_stage_settings (room_pin, stage, duration_seconds) VALUES (?, ?, ?) ON CONFLICT(room_pin, stage) DO UPDATE SET duration_seconds = excluded.duration_seconds").run(roomPin, stage, durationSeconds); logActivity(roomPin, null, "stage_duration_changed", { stage, durationSeconds }); return json(res, 200, { room: expose(roomRow(roomPin), { host: true }) }); }
     return json(res, 400, { error: "unknown room action" });
   } catch (error) {
     return json(res, error.status || 500, { error: error.message || "Room database error" });

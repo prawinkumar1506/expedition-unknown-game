@@ -26,13 +26,13 @@ export default function handler(req, res) {
         message: "15 minutes expired. Archive reconstruction failed. Event 2 opened with the supplied train data."
       });
     }
-    return json(res, 400, { error: "Required archive bundle missing: upload the final JTU-7 gen3 CSV set exactly as provided." });
+    return json(res, 400, { error: "Required archive bundle is incomplete. Choose the three matching recovery fragments." });
   }
 
   return json(res, 200, {
     passed: true,
     status: "completed",
     timeTakenSeconds,
-    message: "Archive reconstruction succeeded. The final JTU-7 gen3 bundle was verified."
+    message: "Archive reconstruction succeeded. The selected recovery bundle was verified."
   });
 }

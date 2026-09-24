@@ -40,6 +40,12 @@ database.exec(`
     unlocked_at INTEGER NOT NULL,
     PRIMARY KEY (room_pin, stage, player_name)
   );
+  CREATE TABLE IF NOT EXISTS game_stage_settings (
+    room_pin TEXT NOT NULL REFERENCES game_rooms(pin) ON DELETE CASCADE,
+    stage TEXT NOT NULL,
+    duration_seconds INTEGER NOT NULL,
+    PRIMARY KEY (room_pin, stage)
+  );
   CREATE TABLE IF NOT EXISTS game_evaluations (
     room_pin TEXT NOT NULL,
     player_name TEXT NOT NULL,

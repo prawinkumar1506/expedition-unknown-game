@@ -24,7 +24,7 @@ let qualityPlan = null, repairs = { missingColumns: new Set(), outlierColumns: n
 let qualityTimeSpentSec = 0, qualityTimerId = null, qualityTimerStart = 0;
 let model = "Random Forest", tuning = normalizeTuning(), hyperparameters = {}, forecastRuns = [], kaggleScript = "", forecastStatus = "", forecastLocked = false;
 let forecastTimeSpentSec = 0, forecastTimerId = null, forecastTimerStart = 0;
-let roomControl = { stageUnlocks: { global: ["event1"], players: {} } }, checkpointTimer = null;
+let roomControl = { stageUnlocks: { global: ["event1"], players: {} }, stageDurations: { manual: 20 * 60 } }, checkpointTimer = null;
 const FEATURE_TIMEOUT_SECONDS = 30 * 60;
 const QUALITY_TIMEOUT_SECONDS = ROUND4.durationSeconds;
 const ROUND4_TIMEOUT_SECONDS = QUALITY_TIMEOUT_SECONDS;
@@ -98,7 +98,8 @@ const formatCountdown = (secondsRemaining) => {
   const seconds = String(totalSeconds % 60).padStart(2, "0");
   return `${minutes}:${seconds}`;
 };
-const formatManualCountdown = () => formatCountdown(15 * 60 - manualTimeSpentSec);
+const manualTimeoutSeconds = () => Math.max(60, Number(roomControl.stageDurations?.manual || 20 * 60));
+const formatManualCountdown = () => formatCountdown(manualTimeoutSeconds() - manualTimeSpentSec);
 const formatFeatureCountdown = () => formatCountdown(FEATURE_TIMEOUT_SECONDS - featureTimeSpentSec);
 const formatQualityCountdown = () => formatCountdown(QUALITY_TIMEOUT_SECONDS - qualityTimeSpentSec);
 const formatEvent1Countdown = () => formatCountdown(EVENT1_TIMEOUT_SECONDS - event1TimeSpentSec);
@@ -226,10 +227,11 @@ const startManualTimer = () => {
   if (manualTimerId) clearInterval(manualTimerId);
   if (!manualTimerStart || manualTimerStart > Date.now()) manualTimerStart = Date.now();
   manualTimerId = setInterval(() => {
-    manualTimeSpentSec = Math.min(15 * 60, Math.max(0, Math.floor((Date.now() - manualTimerStart) / 1000)));
+    const timeoutSeconds = manualTimeoutSeconds();
+    manualTimeSpentSec = Math.min(timeoutSeconds, Math.max(0, Math.floor((Date.now() - manualTimerStart) / 1000)));
     updateChrome();
     if (manualTimeSpentSec % 5 === 0) checkpoint();
-    if (manualTimeSpentSec >= 15 * 60) {
+    if (manualTimeSpentSec >= timeoutSeconds) {
       clearInterval(manualTimerId);
       if (!manualLocked) {
         manualStatus = "Time expired. Event 2 was auto-locked. Wait for the host to open the next stage.";
@@ -361,18 +363,18 @@ function renderEvent1() {
     "traffic/backup_feature_list.json"
   ];
   return `${sectionIntro("1", "Archive Reconstruction", [
-    "When the system came back online, the recovery team found several files from the night of the incident mixed together in the archive. Two junction identifiers appeared repeatedly: JTU-7 and JTU-9. The operations notes for the affected Meridian Avenue crossing were filed under JTU-7, while JTU-9 appeared in records from another nearby route.",
+    "When the system came back online, the recovery team found several files from the night of the incident mixed together in the archive. Records from more than one junction had been copied into the same recovery folder, so matching the correct site is part of the reconstruction.",
     "The first alert from the crossing was logged at 03:14 on March 14, and the monitoring team kept recording the incident for the next six hours, until 09:14. A few files dated March 15 had also ended up in the same folder during recovery, so not every file with a similar name belonged to the incident window.",
-    "The archive had also been synchronized several times while the network was unstable. The first synchronization stopped before it finished, and the second contained an older version of the records. A third synchronization completed successfully shortly before the system went offline, making it the last complete copy of the incident data.",
+    "The archive had also been synchronized several times while the network was unstable. Some synchronization attempts were incomplete or contained older records, while one completed copy was captured shortly before the system went offline.",
     "Recovery was not perfectly clean either. Alongside the synchronized files were older fragments left behind by previous attempts and stray files copied in from unrelated folders—including backups, duplicate copies, partial exports, and legacy records. They may look relevant at first glance, but they were never part of the final incident archive.",
     "Your task is to reconstruct the set of files that belongs to the same incident, using the details in the recovery notes to separate the actual archive from everything that was mixed in around it."
   ], ["Archive Reconstruction", "Manual Override", "Feature Hunt", "Quality Lab", "Forecast"])}
-    <section class="card"><div class="panel-title">Recovered archive bundle <span>Pull together the fragments that belong to the final JTU-7 recovery window</span></div>
+    <section class="card"><div class="panel-title">Recovered archive bundle <span>Pull together the fragments that belong to the same final recovery window</span></div>
       <div class="selection-board">
         <div class="panel-title">Available recovery fragments <span>${event1Selections.length}/3 selected</span></div>
         <div class="pick-grid">${archiveCandidates.map(name => `<button class="pick feature ${event1Selections.includes(name) ? "chosen" : ""}" data-event1-choice="${name}" type="button" ${event1Result ? "disabled" : ""}><b>${event1Selections.includes(name) ? "✓" : "+"}</b><span class="pick-text"><strong class="pick-name">${esc(name)}</strong><small>recovery fragment</small></span></button>`).join("")}</div>
       </div>
-      ${event1Result ? "" : `<div class="analysis-status">${esc(event1Status || "Choose the three fragments that belong to the final JTU-7 gen3 bundle. No upload box is required; the archive is already staged in the project folder and it must be reconstructed from the valid names alone.")}</div>`}
+      ${event1Result ? "" : `<div class="analysis-status">${esc(event1Status || "Choose the three fragments that belong to the same final archive bundle. No upload box is required; reconstruct it from the available recovery names.")}</div>`}
       <div class="stage-actions">${event1Result ? `<span class="recovery-message success">Archive ${event1Result.passed ? "completed" : "failed"}. This round is locked${stageIsUnlocked("manual") ? "." : "; waiting for the host to open Event 2."}</span>${stageIsUnlocked("manual") ? `<button class="btn btn--primary" data-next="manual">Open Event 2</button>` : ""}` : `<button id="event1-submit" class="btn btn--primary" ${event1Selections.length !== 3 ? "disabled" : ""}>Submit archive</button>`}</div>
     </section>`;
 }
@@ -567,7 +569,7 @@ function bind() {
     const required = ["JTU7_stream_A_core_20260314_0314_gen3.csv", "JTU7_stream_B_context_20260314_0314_gen3.csv", "JTU7_stream_C_labels_20260314_0314_gen3.csv"];
     const isMatch = names.length === required.length && required.every(name => names.includes(name));
     if (!isMatch) {
-      event1Status = "The recovered bundle does not match the expected final archive. Re-check the site, time window, and generation before submitting again.";
+      event1Status = "The recovered bundle does not match the expected final archive. Re-check the recovery fragments before submitting again.";
       render();
       return;
     }
@@ -578,7 +580,7 @@ function bind() {
     try {
       const result = await request("/api/recovery", { room: session.room, player: session.player, files: names, timeTakenSeconds: event1TimeSpentSec });
       event1Result = { passed: Boolean(result.passed), status: result.status || "completed", timeTakenSeconds: Number(result.timeTakenSeconds || event1TimeSpentSec) };
-      event1Status = result.message || "Archive reconstructed successfully. The final JTU-7 gen3 bundle was verified.";
+      event1Status = result.message || "Archive reconstructed successfully. The selected recovery bundle was verified.";
       await saveEvent1Result(event1Result);
       highestStage = Math.max(highestStage, 1);
       render();
