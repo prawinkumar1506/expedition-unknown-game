@@ -1,3 +1,5 @@
+import { autoMapKaggleTeams, parseKaggleResultsCsv } from "/kaggle-results.js";
+
 const pin = document.querySelector("#room-pin");
 const message = document.querySelector("#host-message");
 const button = document.querySelector("#start-game");
@@ -15,12 +17,19 @@ const overallLeaderboard = document.querySelector("#overall-leaderboard");
 const leaderboardUpdated = document.querySelector("#leaderboard-updated");
 const inspectorTeam = document.querySelector("#inspector-team");
 const teamInspector = document.querySelector("#team-inspector");
+const kaggleResultsFile = document.querySelector("#kaggle-results-file");
+const kaggleScoreField = document.querySelector("#kaggle-score-field");
+const kaggleClearResults = document.querySelector("#kaggle-clear-results");
+const kaggleImportStatus = document.querySelector("#kaggle-import-status");
+const kaggleTeamMapping = document.querySelector("#kaggle-team-mapping");
 
 let room;
 let hostToken;
 let timer;
 let selectedInspector = "";
 const inspectorOpen = new Set();
+let kaggleRoomPin = "";
+let kaggleImport = { scoreField: "PrivateScore", rawCsv: "", sourceName: "", rows: [], mapping: {} };
 
 const hostStorageKey = "clearway-host-room";
 const stageOrder = ["event1", "manual", "features", "quality"];
@@ -34,7 +43,7 @@ const leaderboardStages = [
   ["event1", "E1 Archive"],
   ["manual", "E2 Manual"],
   ["features", "E3 Features"],
-  ["quality", "E4 Handoff"]
+  ["quality", "E4 Kaggle"]
 ];
 const INVESTIGATION_BUDGET = 75;
 const ROUND4_CREDIT_BUDGET = 200;
@@ -77,6 +86,78 @@ function formatDate(value) {
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
 }
 
+const kaggleStorageKey = roomPin => `clearway-kaggle-results:${roomPin}`;
+
+function saveKaggleImport() {
+  if (!room?.pin) return;
+  localStorage.setItem(kaggleStorageKey(room.pin), JSON.stringify(kaggleImport));
+}
+
+function loadKaggleImport() {
+  if (!room?.pin || kaggleRoomPin === room.pin) return;
+  kaggleRoomPin = room.pin;
+  try {
+    const saved = JSON.parse(localStorage.getItem(kaggleStorageKey(room.pin)) || "null");
+    kaggleImport = saved && typeof saved === "object"
+      ? { scoreField: saved.scoreField === "PublicScore" ? "PublicScore" : "PrivateScore", rawCsv: saved.rawCsv || "", sourceName: saved.sourceName || "", rows: Array.isArray(saved.rows) ? saved.rows : [], mapping: saved.mapping && typeof saved.mapping === "object" ? saved.mapping : {} }
+      : { scoreField: "PrivateScore", rawCsv: "", sourceName: "", rows: [], mapping: {} };
+  } catch {
+    kaggleImport = { scoreField: "PrivateScore", rawCsv: "", sourceName: "", rows: [], mapping: {} };
+  }
+  if (kaggleScoreField) kaggleScoreField.value = kaggleImport.scoreField;
+}
+
+function kaggleScoreForPlayer(playerName) {
+  return kaggleImport.rows.find(row => kaggleImport.mapping?.[row.teamName] === playerName) || null;
+}
+
+function refreshKaggleAutoMapping() {
+  if (!room || !kaggleImport.rows.length) return;
+  const before = JSON.stringify(kaggleImport.mapping || {});
+  kaggleImport.mapping = autoMapKaggleTeams(kaggleImport.rows, room.players.map(player => player.name), kaggleImport.mapping || {});
+  if (JSON.stringify(kaggleImport.mapping) !== before) saveKaggleImport();
+}
+
+function renderKaggleImport() {
+  if (!kaggleImportStatus || !kaggleTeamMapping) return;
+  const rows = kaggleImport.rows || [];
+  if (!rows.length) {
+    kaggleImportStatus.className = "kaggle-import-status";
+    kaggleImportStatus.textContent = "No Kaggle results imported for this room.";
+    kaggleTeamMapping.innerHTML = "";
+    return;
+  }
+  const mapped = rows.filter(row => kaggleImport.mapping?.[row.teamName]).length;
+  const selectedTeams = rows.filter(row => row.usedSelectedSubmission).length;
+  const fallbackTeams = rows.length - selectedTeams;
+  kaggleImportStatus.className = `kaggle-import-status ${mapped === rows.length ? "good" : "warn"}`;
+  kaggleImportStatus.textContent = `${kaggleImport.sourceName || "Kaggle CSV"}: ${rows.length} teams · ${mapped}/${rows.length} mapped · ${selectedTeams} using selected submissions · ${fallbackTeams} using best-score fallback · ${kaggleImport.scoreField}`;
+  const playerNames = room?.players?.map(player => player.name) || [];
+  kaggleTeamMapping.innerHTML = `<div class="table-scroll"><table class="data-table"><thead><tr><th>Kaggle team</th><th>Submission</th><th>${esc(kaggleImport.scoreField)}</th><th>Merge into room team</th></tr></thead><tbody>${rows.map(row => {
+    const mappedPlayer = kaggleImport.mapping?.[row.teamName] || "";
+    return `<tr><td><strong>${esc(row.teamName)}</strong><span class="kaggle-source-note">${esc(row.userName || "")} · ${row.submissionCount} submission${row.submissionCount === 1 ? "" : "s"}</span></td><td>${row.usedSelectedSubmission ? `<span class="tag t-info">SELECTED</span><span class="kaggle-source-note">best of ${row.selectedCount} selected</span>` : `<span class="tag t-old">FALLBACK</span><span class="kaggle-source-note">best available score</span>`}</td><td><span class="kaggle-score-value">${(row.score * 100).toFixed(3)}%</span><span class="kaggle-source-note">raw ${row.score.toFixed(6)}</span></td><td><select class="kaggle-map-select" data-kaggle-team="${esc(row.teamName)}"><option value="">Unmapped</option>${playerNames.map(name => `<option value="${esc(name)}" ${name === mappedPlayer ? "selected" : ""}>${esc(name)}</option>`).join("")}</select>${mappedPlayer ? "" : '<span class="kaggle-unmapped">Map this team before finalizing standings.</span>'}</td></tr>`;
+  }).join("")}</tbody></table></div>`;
+  kaggleTeamMapping.querySelectorAll("[data-kaggle-team]").forEach(select => {
+    select.onchange = () => {
+      const kaggleTeam = select.dataset.kaggleTeam;
+      const playerName = select.value;
+      if (playerName) {
+        for (const [otherTeam, mappedPlayer] of Object.entries(kaggleImport.mapping || {})) {
+          if (otherTeam !== kaggleTeam && mappedPlayer === playerName) delete kaggleImport.mapping[otherTeam];
+        }
+        kaggleImport.mapping[kaggleTeam] = playerName;
+      } else {
+        delete kaggleImport.mapping[kaggleTeam];
+      }
+      saveKaggleImport();
+      renderKaggleImport();
+      renderLeaderboard();
+      renderTeamInspector();
+      renderQualityScoreboard();
+    };
+  });
+}
+
 function getScores(stage) {
   return (room?.scores || []).filter(item => item.stage === stage);
 }
@@ -86,27 +167,43 @@ function scoreFor(player, stage) {
 }
 
 function stageNormalizedScore(player, stage) {
+  if (stage === "quality" && kaggleImport.rows.length) {
+    const kaggle = kaggleScoreForPlayer(player);
+    return kaggle ? Math.max(0, Math.min(100, kaggle.score * 100)) : 0;
+  }
   const score = scoreFor(player, stage);
   if (!score) return 0;
   if (stage === "event1") return score.passed ? 100 : 0;
   return Math.max(0, Math.min(100, number(score.score)));
 }
 
+function stageIsCompleteForLeaderboard(player, stage) {
+  if (stage === "quality" && kaggleImport.rows.length) return Boolean(kaggleScoreForPlayer(player));
+  return Boolean(scoreFor(player, stage));
+}
+
 function leaderboardRow(player) {
   const progress = room?.progress?.[player.name] || {};
+  const kaggle = kaggleScoreForPlayer(player.name);
   const stages = Object.fromEntries(leaderboardStages.map(([stage]) => [stage, stageNormalizedScore(player.name, stage)]));
   const total = Object.values(stages).reduce((sum, score) => sum + score, 0);
-  const completed = leaderboardStages.filter(([stage]) => scoreFor(player.name, stage)).length;
-  const totalTime = leaderboardStages.reduce((sum, [stage]) => sum + number(scoreFor(player.name, stage)?.timeTakenSeconds), 0);
+  const completed = leaderboardStages.filter(([stage]) => stageIsCompleteForLeaderboard(player.name, stage)).length;
+  const totalTime = leaderboardStages.reduce((sum, [stage]) => {
+    const recorded = scoreFor(player.name, stage)?.timeTakenSeconds;
+    if (recorded !== undefined && recorded !== null) return sum + number(recorded);
+    if (stage === "quality" && kaggleImport.rows.length && kaggle) return sum + FINAL_LIMIT_SECONDS;
+    return sum;
+  }, 0);
   const featureCredits = scoreFor(player.name, "features")?.credits ?? Math.max(0, INVESTIGATION_BUDGET - number(progress.analysisCredits ?? INVESTIGATION_BUDGET));
   const runs = Array.isArray(progress.forecastRuns) ? progress.forecastRuns : [];
   const round4CreditsFromProgress = runs.reduce((sum, run) => sum + number(run.totalCost ?? (number(run.cost) + number(run.repairCost))), 0);
-  const round4Credits = scoreFor(player.name, "quality")?.credits ?? round4CreditsFromProgress;
+  const recordedRound4Credits = scoreFor(player.name, "quality")?.credits;
+  const round4Credits = recordedRound4Credits ?? (runs.length ? round4CreditsFromProgress : (kaggleImport.rows.length && kaggle ? ROUND4_CREDIT_BUDGET : 0));
   const creditsUsed = Math.max(0, featureCredits + round4Credits);
   const creditEfficiency = Math.max(0, Math.min(100, (1 - creditsUsed / TOTAL_CREDIT_BUDGET) * 100));
   const manualLimit = Math.max(60, number(room?.stageDurations?.manual || 20 * 60));
   const stageLimits = { event1: EVENT1_LIMIT_SECONDS, manual: manualLimit, features: FEATURE_LIMIT_SECONDS, quality: FINAL_LIMIT_SECONDS };
-  const completedTimeBudget = leaderboardStages.reduce((sum, [stage]) => sum + (scoreFor(player.name, stage) ? stageLimits[stage] : 0), 0);
+  const completedTimeBudget = leaderboardStages.reduce((sum, [stage]) => sum + (stageIsCompleteForLeaderboard(player.name, stage) ? stageLimits[stage] : 0), 0);
   const timeEfficiency = completedTimeBudget ? Math.max(0, Math.min(100, (1 - totalTime / completedTimeBudget) * 100)) : 0;
   const completionFactor = completed / leaderboardStages.length;
   const performance = total / leaderboardStages.length;
@@ -120,6 +217,7 @@ function leaderboardRow(player) {
     creditsUsed,
     creditEfficiency,
     timeEfficiency,
+    kaggle,
     completed,
     totalTime,
     currentStage: progress.stage || "event1"
@@ -132,8 +230,8 @@ function leaderboardRows() {
   );
 }
 
-function scoreCell(score, complete) {
-  return `<div class="leaderboard-score"><b>${score.toFixed(1)}</b><span class="leaderboard-score-bar"><i style="width:${Math.max(0, Math.min(100, score))}%"></i></span></div><span class="leaderboard-meta">${complete ? "submitted" : "not submitted"}</span>`;
+function scoreCell(score, complete, meta = "") {
+  return `<div class="leaderboard-score"><b>${score.toFixed(1)}</b><span class="leaderboard-score-bar"><i style="width:${Math.max(0, Math.min(100, score))}%"></i></span></div><span class="leaderboard-meta">${esc(meta || (complete ? "submitted" : "not submitted"))}</span>`;
 }
 
 function renderLeaderboard() {
@@ -147,7 +245,13 @@ function renderLeaderboard() {
   overallLeaderboard.innerHTML = `<div class="table-scroll"><table class="data-table leaderboard-table"><thead><tr><th>Rank</th><th>Team</th>${leaderboardStages.map(([, label]) => `<th>${esc(label)}</th>`).join("")}<th>Total</th><th>Credits used</th><th>Time</th><th>Evaluation</th><th>Current stage</th><th></th></tr></thead><tbody>${rows.map((entry, index) => `<tr>
     <td class="leaderboard-rank">#${index + 1}</td>
     <td class="leaderboard-team">${esc(entry.player)}<span class="leaderboard-meta">${entry.completed}/4 stages · ${formatTime(entry.totalTime)} recorded</span></td>
-    ${leaderboardStages.map(([stage]) => `<td class="leaderboard-stage">${scoreCell(entry.stages[stage], Boolean(scoreFor(entry.player, stage)))}</td>`).join("")}
+    ${leaderboardStages.map(([stage]) => {
+      const complete = stageIsCompleteForLeaderboard(entry.player, stage);
+      const meta = stage === "quality" && kaggleImport.rows.length
+        ? (entry.kaggle ? `Kaggle ${entry.kaggle.scoreField === "PrivateScore" ? "private" : "public"}` : "Kaggle unmapped")
+        : "";
+      return `<td class="leaderboard-stage">${scoreCell(entry.stages[stage], complete, meta)}</td>`;
+    }).join("")}
     <td class="leaderboard-total">${entry.total.toFixed(1)} / 400</td>
     <td><strong>${entry.creditsUsed} / ${TOTAL_CREDIT_BUDGET}</strong></td>
     <td><strong>${formatTime(entry.totalTime)}</strong></td>
@@ -224,7 +328,8 @@ function renderTeamInspector() {
   const missingMethodRows = missingRepairs.map(feature => [feature, progress.repairMethods?.missing?.[feature] || "median"]);
   const outlierMethodRows = outlierRepairs.map(feature => [feature, progress.repairMethods?.outlier?.[feature] || "iqr_clip"]);
   const committedRound4Credits = forecastRuns.reduce((sum, run) => sum + number(run.totalCost ?? (number(run.cost) + number(run.repairCost))), 0);
-  const event4Body = `<div class="inspect-grid">${kv("Quality score", e4.score == null ? "—" : pct(e4.score))}${kv("Round 4 credits", `${committedRound4Credits} / 200`)}${kv("Credits remaining", `${Math.max(0, 200 - committedRound4Credits)} / 200`)}${kv("Kaggle uploaded", progress.kaggleSubmitted ? "YES" : "NO")}${kv("Status", e4.status || "in progress")}${kv("Time", formatTime(e4.timeTakenSeconds))}</div><div class="inspect-section-label">Current missing-value plan</div>${missingMethodRows.length ? `<table class="inspect-table"><thead><tr><th>Feature</th><th>Method</th></tr></thead><tbody>${missingMethodRows.map(([feature, method]) => `<tr><td>${esc(feature)}</td><td>${esc(method)}</td></tr>`).join("")}</tbody></table>` : '<p class="inspect-note">No missing-value repairs selected.</p>'}<div class="inspect-section-label">Current outlier plan</div>${outlierMethodRows.length ? `<table class="inspect-table"><thead><tr><th>Feature</th><th>Method</th></tr></thead><tbody>${outlierMethodRows.map(([feature, method]) => `<tr><td>${esc(feature)}</td><td>${esc(method)}</td></tr>`).join("")}</tbody></table>` : '<p class="inspect-note">No outlier repairs selected.</p>'}`;
+  const kaggle = kaggleScoreForPlayer(selectedInspector);
+  const event4Body = `<div class="inspect-grid">${kv("Internal repair score", e4.score == null ? "—" : pct(e4.score))}${kv("Kaggle final score", kaggle ? `${(kaggle.score * 100).toFixed(3)}%` : (kaggleImport.rows.length ? "UNMAPPED" : "NOT IMPORTED"))}${kv("Kaggle source", kaggle ? `${kaggle.scoreField} · ${kaggle.teamName}` : "—")}${kv("Round 4 credits", `${committedRound4Credits} / 200`)}${kv("Credits remaining", `${Math.max(0, 200 - committedRound4Credits)} / 200`)}${kv("Kaggle uploaded", progress.kaggleSubmitted ? "YES" : "NO")}${kv("Status", e4.status || "in progress")}${kv("Time", formatTime(e4.timeTakenSeconds))}</div><div class="inspect-section-label">Current missing-value plan</div>${missingMethodRows.length ? `<table class="inspect-table"><thead><tr><th>Feature</th><th>Method</th></tr></thead><tbody>${missingMethodRows.map(([feature, method]) => `<tr><td>${esc(feature)}</td><td>${esc(method)}</td></tr>`).join("")}</tbody></table>` : '<p class="inspect-note">No missing-value repairs selected.</p>'}<div class="inspect-section-label">Current outlier plan</div>${outlierMethodRows.length ? `<table class="inspect-table"><thead><tr><th>Feature</th><th>Method</th></tr></thead><tbody>${outlierMethodRows.map(([feature, method]) => `<tr><td>${esc(feature)}</td><td>${esc(method)}</td></tr>`).join("")}</tbody></table>` : '<p class="inspect-note">No outlier repairs selected.</p>'}`;
   const currentParams = progress.hyperparameters?.[progress.model] || {};
   const modelBody = `<div class="inspect-grid">${kv("Current model", progress.model || "—")}${kv("Notebook runs", forecastRuns.length)}${kv("Random seed", progress.tuning?.randomState ?? "—")}${kv("Kaggle uploaded", progress.kaggleSubmitted ? "YES" : "NO")}${kv("Generation locked", progress.forecastLocked ? "YES" : "NO")}</div><div class="inspect-section-label">Current search-range levels</div><pre class="inspect-params">${esc(JSON.stringify(currentParams, null, 2) || "{}")}</pre><div class="inspect-section-label">Generated notebook runs</div>${forecastRuns.length ? `<div class="table-scroll"><table class="inspect-table"><thead><tr><th>When</th><th>Model</th><th>Target</th><th>Total CR</th><th>Search ranges</th></tr></thead><tbody>${forecastRuns.map(run => `<tr><td>${esc(formatDate(run.createdAt))}</td><td>${esc(run.model)}</td><td>${run.targetSeconds ? esc(formatTime(run.targetSeconds)) : "—"}</td><td>${number(run.totalCost ?? (number(run.cost) + number(run.repairCost)))}</td><td>${esc(JSON.stringify(run.parameters || {}))}</td></tr>`).join("")}</tbody></table></div>` : '<p class="inspect-note">No model notebook has been generated yet.</p>'}<div class="inspect-section-label">Latest handoff status</div><p class="inspect-note">${esc(progress.forecastStatus || "No model handoff status recorded yet.")}</p>`;
   const activityBody = teamActivity.length ? `<div class="table-scroll"><table class="inspect-table"><thead><tr><th>Time</th><th>Event</th><th>Stage / payload</th></tr></thead><tbody>${teamActivity.map(item => `<tr><td>${esc(formatDate(item.createdAt))}</td><td>${esc(item.event)}</td><td>${esc(item.payload?.stage || JSON.stringify(item.payload || {}))}</td></tr>`).join("")}</tbody></table></div>` : '<p class="inspect-note">No server activity recorded for this team yet.</p>';
@@ -241,7 +346,7 @@ function renderTeamInspector() {
     ${detail("event1", "Event 1 · Archive Reconstruction", `${stageNormalizedScore(selectedInspector, "event1").toFixed(1)} / 100`, event1Body)}
     ${detail("manual", "Event 2 · Manual Override", `${stageNormalizedScore(selectedInspector, "manual").toFixed(1)} / 100`, event2Body)}
     ${detail("features", "Event 3 · Feature Hunt", `${stageNormalizedScore(selectedInspector, "features").toFixed(1)} / 100`, event3Body)}
-    ${detail("quality", "Event 4 · Repair + Model Handoff", `${stageNormalizedScore(selectedInspector, "quality").toFixed(1)} / 100`, event4Body)}
+    ${detail("quality", "Event 4 · Repair + Model Handoff", kaggleImport.rows.length ? `${stageNormalizedScore(selectedInspector, "quality").toFixed(1)} / 100 Kaggle` : `${stageNormalizedScore(selectedInspector, "quality").toFixed(1)} / 100`, event4Body)}
     ${detail("model", "Model notebook activity", `${forecastRuns.length} generated`, modelBody)}
     ${detail("activity", "Server activity trail", `${teamActivity.length} events`, activityBody)}
   </div>`;
@@ -294,7 +399,7 @@ function renderFeatureScoreboard() {
 function renderQualityScoreboard() {
   const scores = getQualityScores();
   if (!scores.length) { qualityScoreboard.innerHTML = "<span>No Event 4 results yet.</span>"; return; }
-  qualityScoreboard.innerHTML = `<div class="table-scroll"><table class="data-table"><thead><tr><th>Team</th><th>Status</th><th>Score</th><th>Total credits</th><th>Time</th></tr></thead><tbody>${scores.map(team => `<tr><td>${esc(team.player)}</td><td>${esc(team.status || "IN PROGRESS")}</td><td>${pct(team.score)}</td><td>${number(team.credits)}</td><td>${formatTime(team.timeTakenSeconds)}</td></tr>`).join("")}</tbody></table></div>`;
+  qualityScoreboard.innerHTML = `<div class="table-scroll"><table class="data-table"><thead><tr><th>Team</th><th>Status</th><th>Internal repair</th><th>Kaggle final</th><th>Round 4 credits</th><th>Time</th></tr></thead><tbody>${scores.map(team => { const kaggle = kaggleScoreForPlayer(team.player); return `<tr><td>${esc(team.player)}</td><td>${esc(team.status || "IN PROGRESS")}</td><td>${pct(team.score)}</td><td>${kaggle ? `${(kaggle.score * 100).toFixed(3)}%` : (kaggleImport.rows.length ? "UNMAPPED" : "—")}</td><td>${number(team.credits)}</td><td>${formatTime(team.timeTakenSeconds)}</td></tr>`; }).join("")}</tbody></table></div>`;
 }
 
 function renderActivity() {
@@ -361,6 +466,8 @@ function forgetRoom() {
 
 function show(next) {
   room = next;
+  loadKaggleImport();
+  refreshKaggleAutoMapping();
   rememberRoom();
   pin.innerHTML = `${room.pin.slice(0, 3)} ${room.pin.slice(3)} <span class="accent">${room.status === "started" ? "LIVE" : "READY"}</span>`;
   count.textContent = room.players.length;
@@ -373,6 +480,7 @@ function show(next) {
     message.textContent = "The room is live. New teams can join Event 1.";
   }
   renderStageControls();
+  renderKaggleImport();
   renderLeaderboard();
   renderInspectorSelector();
   renderTeamInspector();
@@ -402,6 +510,65 @@ async function createRoom() {
   clearInterval(timer);
   timer = setInterval(refresh, 5000);
 }
+
+if (kaggleResultsFile) kaggleResultsFile.onchange = async () => {
+  const file = kaggleResultsFile.files?.[0];
+  if (!file) return;
+  try {
+    const rawCsv = await file.text();
+    const scoreField = kaggleScoreField?.value === "PublicScore" ? "PublicScore" : "PrivateScore";
+    const rows = parseKaggleResultsCsv(rawCsv, scoreField);
+    kaggleImport = {
+      scoreField,
+      rawCsv,
+      sourceName: file.name,
+      rows,
+      mapping: autoMapKaggleTeams(rows, room?.players?.map(player => player.name) || [], kaggleImport.mapping || {})
+    };
+    saveKaggleImport();
+    renderKaggleImport();
+    renderLeaderboard();
+    renderTeamInspector();
+    renderQualityScoreboard();
+    message.textContent = `Kaggle results imported: ${rows.length} teams found.`;
+  } catch (error) {
+    kaggleImportStatus.className = "kaggle-import-status bad";
+    kaggleImportStatus.textContent = error.message || "Could not read the Kaggle CSV.";
+  } finally {
+    kaggleResultsFile.value = "";
+  }
+};
+
+if (kaggleScoreField) kaggleScoreField.onchange = () => {
+  const scoreField = kaggleScoreField.value === "PublicScore" ? "PublicScore" : "PrivateScore";
+  kaggleImport.scoreField = scoreField;
+  if (kaggleImport.rawCsv) {
+    try {
+      kaggleImport.rows = parseKaggleResultsCsv(kaggleImport.rawCsv, scoreField);
+      kaggleImport.mapping = autoMapKaggleTeams(kaggleImport.rows, room?.players?.map(player => player.name) || [], kaggleImport.mapping || {});
+      saveKaggleImport();
+      renderKaggleImport();
+      renderLeaderboard();
+      renderTeamInspector();
+      renderQualityScoreboard();
+    } catch (error) {
+      kaggleImportStatus.className = "kaggle-import-status bad";
+      kaggleImportStatus.textContent = error.message || "Could not recalculate the Kaggle results.";
+    }
+  }
+};
+
+if (kaggleClearResults) kaggleClearResults.onclick = () => {
+  if (!room?.pin || !kaggleImport.rows.length) return;
+  if (!confirm("Clear the imported Kaggle results and restore the internal Event 4 scores in the leaderboard?")) return;
+  localStorage.removeItem(kaggleStorageKey(room.pin));
+  kaggleImport = { scoreField: kaggleScoreField?.value === "PublicScore" ? "PublicScore" : "PrivateScore", rawCsv: "", sourceName: "", rows: [], mapping: {} };
+  renderKaggleImport();
+  renderLeaderboard();
+  renderTeamInspector();
+  renderQualityScoreboard();
+  message.textContent = "Kaggle results cleared. The leaderboard is using the internal Event 4 score again.";
+};
 
 (async () => {
   try {

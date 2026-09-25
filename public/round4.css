@@ -14,6 +14,20 @@
 .round4-lab .r4-clock span { font: 10px 'JetBrains Mono', monospace; letter-spacing: 1px; color: var(--r4-accent); }
 .round4-lab .r4-clock strong { font: 42px 'JetBrains Mono', monospace; }
 .round4-lab .r4-clock small { font-size: 11px; color: #bccfc7; }
+.round4-lab .r4-credit-hero { display: grid; grid-template-columns: minmax(260px, .85fr) minmax(0, 2fr); gap: 28px; align-items: stretch; padding: 30px 34px; border: 2px solid #5e9870; border-radius: 18px; background: linear-gradient(120deg, #1d392b 0%, #172b25 45%, #18252b 100%); box-shadow: 0 18px 42px rgba(0, 0, 0, .18); transition: border-color .15s, background .15s; }
+.round4-lab .r4-credit-primary { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; align-content: center; }
+.round4-lab .r4-credit-primary > span { width: 100%; color: var(--r4-accent); font: 11px 'JetBrains Mono', monospace; letter-spacing: 1.7px; }
+.round4-lab .r4-credit-primary strong { font: 700 clamp(56px, 7vw, 86px) 'JetBrains Mono', monospace; line-height: .95; color: var(--r4-accent); letter-spacing: -4px; }
+.round4-lab .r4-credit-primary small { color: #bfd0c7; font: 13px 'JetBrains Mono', monospace; }
+.round4-lab .r4-credit-breakdown { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.round4-lab .r4-credit-breakdown > div { display: grid; align-content: center; gap: 7px; min-width: 0; padding: 17px 18px; border: 1px solid #40554b; border-radius: 11px; background: rgba(12, 24, 21, .46); }
+.round4-lab .r4-credit-breakdown span { color: #9eb2a8; font: 9px 'JetBrains Mono', monospace; letter-spacing: 1.25px; }
+.round4-lab .r4-credit-breakdown b { font-size: 18px; font-weight: 600; color: #edf4f5; }
+.round4-lab .r4-credit-breakdown small { color: #9fb0aa; font-size: 10px; line-height: 1.45; }
+.round4-lab .r4-credit-hero.is-over-budget { border-color: #d87979; background: linear-gradient(120deg, #422525 0%, #2b1d20 48%, #242329 100%); }
+.round4-lab .r4-credit-hero.is-over-budget .r4-credit-primary strong,
+.round4-lab .r4-credit-hero.is-over-budget .r4-credit-primary > span,
+.round4-lab .r4-credit-hero.is-over-budget .r4-credit-breakdown > div:last-child b { color: #ffabab; }
 .round4-lab .r4-wallets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .round4-lab .r4-wallets > div { background: #1b252f; border: 1px solid var(--r4-line); border-radius: 12px; padding: 22px; display: grid; gap: 10px; }
 .round4-lab .r4-wallets span { color: var(--r4-muted); font: 10px 'JetBrains Mono', monospace; letter-spacing: 1.5px; }
@@ -91,7 +105,8 @@
 .round4-lab .r4-finish p { color: var(--r4-muted); font-size: 13px; line-height: 1.8; margin-top: 12px; }
 .round4-lab .r4-finish label { display: flex; gap: 10px; align-items: center; font-size: 12px; margin-top: 20px; }
 @media (max-width: 1250px) { .round4-lab .r4-models, .round4-lab .r4-wallets { grid-template-columns: repeat(2, minmax(0, 1fr)); } .round4-lab .r4-roadmap small { display: none; } }
-@media (max-width: 760px) { .round4-lab .r4-hero { flex-direction: column; align-items: flex-start; padding: 24px; } .round4-lab .r4-clock { text-align: left; } .round4-lab .r4-wallets, .round4-lab .r4-workbench, .round4-lab .r4-repairs { grid-template-columns: 1fr; } .round4-lab .r4-wallets { gap: 10px; } .round4-lab .r4-wallets > div { padding: 18px; } .round4-lab .r4-panel { padding: 20px; } .round4-lab .r4-heading, .round4-lab .r4-finish { flex-direction: column; align-items: flex-start; } .round4-lab .r4-run-summary { position: static; } .round4-lab .r4-roadmap { flex-direction: column; } .round4-lab .r4-models { grid-template-columns: 1fr; } .round4-lab summary span { float: none; display: block; margin-top: 8px; } }
+@media (max-width: 900px) { .round4-lab .r4-credit-hero { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .round4-lab .r4-hero { flex-direction: column; align-items: flex-start; padding: 24px; } .round4-lab .r4-clock { text-align: left; } .round4-lab .r4-credit-hero { padding: 24px; } .round4-lab .r4-credit-breakdown { grid-template-columns: 1fr; } .round4-lab .r4-credit-primary strong { font-size: 58px; } .round4-lab .r4-wallets, .round4-lab .r4-workbench, .round4-lab .r4-repairs { grid-template-columns: 1fr; } .round4-lab .r4-wallets { gap: 10px; } .round4-lab .r4-wallets > div { padding: 18px; } .round4-lab .r4-panel { padding: 20px; } .round4-lab .r4-heading, .round4-lab .r4-finish { flex-direction: column; align-items: flex-start; } .round4-lab .r4-run-summary { position: static; } .round4-lab .r4-roadmap { flex-direction: column; } .round4-lab .r4-models { grid-template-columns: 1fr; } .round4-lab summary span { float: none; display: block; margin-top: 8px; } }
 
 /* Round 4 light theme. The round has its own visual system, so it needs an
    explicit light palette instead of inheriting the dark hard-coded surfaces. */
@@ -107,6 +122,20 @@
 }
 :root[data-theme="light"] .round4-lab .r4-hero p,
 :root[data-theme="light"] .round4-lab .r4-clock small { color: #536174; }
+:root[data-theme="light"] .round4-lab .r4-credit-hero {
+  border-color: #76a98a;
+  background: linear-gradient(120deg, #edf8f1 0%, #f7fbf8 52%, #ffffff 100%);
+  box-shadow: 0 12px 30px rgba(35, 53, 75, .08);
+}
+:root[data-theme="light"] .round4-lab .r4-credit-primary small,
+:root[data-theme="light"] .round4-lab .r4-credit-breakdown span,
+:root[data-theme="light"] .round4-lab .r4-credit-breakdown small { color: #617168; }
+:root[data-theme="light"] .round4-lab .r4-credit-breakdown > div { background: rgba(255,255,255,.82); border-color: #cddbd2; }
+:root[data-theme="light"] .round4-lab .r4-credit-breakdown b { color: #17202b; }
+:root[data-theme="light"] .round4-lab .r4-credit-hero.is-over-budget { border-color: #c96d6d; background: linear-gradient(120deg, #fff0f0 0%, #fff7f7 60%, #ffffff 100%); }
+:root[data-theme="light"] .round4-lab .r4-credit-hero.is-over-budget .r4-credit-primary strong,
+:root[data-theme="light"] .round4-lab .r4-credit-hero.is-over-budget .r4-credit-primary > span,
+:root[data-theme="light"] .round4-lab .r4-credit-hero.is-over-budget .r4-credit-breakdown > div:last-child b { color: #b04444; }
 :root[data-theme="light"] .round4-lab .r4-wallets > div,
 :root[data-theme="light"] .round4-lab .r4-panel {
   background: #ffffff;

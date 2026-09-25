@@ -194,6 +194,8 @@ test("Round 4 lasts 90 minutes and completion is available immediately", async (
   assert.match(source, /QUALITY_TIMEOUT_SECONDS\s*=\s*ROUND4\.durationSeconds/);
   assert.doesNotMatch(source, /round4Elapsed\(\) < ROUND4\.minimumSeconds/);
   assert.match(source, /round4Closed\(\) \|\| generatingNotebook/);
+  assert.match(source, /id="round4-credits-left"/);
+  assert.match(source, /updateRound4CreditPreview\(\)/);
 });
 
 test("the retired camera route states that Event 2 is tabular", () => {

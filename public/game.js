@@ -81,6 +81,8 @@ const modelSpend = () => forecastRuns.reduce((sum, run) => sum + Number(run.cost
 const repairSpend = () => forecastRuns.reduce((sum, run) => sum + Number(run.repairCost || 0), 0);
 const round4Spend = () => modelSpend() + repairSpend();
 const round4CreditsRemaining = () => Math.max(0, ROUND4.creditBudget - round4Spend());
+const currentExperimentCost = () => qualityPlan ? searchPlan(model, hyperparameters[model]).cost + currentRepairSpend() : 0;
+const projectedRound4CreditsRemaining = () => Math.max(0, round4CreditsRemaining() - currentExperimentCost());
 const stageIsUnlocked = name => roomControl.stageUnlocks?.global?.includes(name) || roomControl.stageUnlocks?.players?.[session.player]?.includes(name);
 const serializeState = () => ({ stage, highestStage, stageStartedAt: { event1: event1TimerStart, manual: manualTimerStart, features: featureTimerStart, quality: qualityTimerStart, forecast: forecastTimerStart }, stageElapsed: { features: featureTimeSpentSec }, manualLabels, manualLocked, manualState, manualResult, event1Result, event1Selections, analysisState, analysisCredits, findings, selectedFeatures: [...selectedFeatures], featureState, featureResult, qualityPlan, repairs: Object.fromEntries(Object.entries(repairs).map(([key, value]) => [key, [...value]])), repairMethods, qualityState, qualityResult, model, tuning, hyperparameters, forecastRuns, round4CreditState, kaggleScript, forecastStatus, forecastLocked, kaggleSubmitted });
 const applyState = saved => {
@@ -536,9 +538,10 @@ function repairCards(kind, items) {
 }
 function renderQuality() {
   if (!qualityPlan) return `<section class="card"><div class="loading">Loading Round 4 repair options…</div></section>`;
-  const currentPlanCost = searchPlan(model, hyperparameters[model]).cost + currentRepairSpend();
+  const currentPlanCost = currentExperimentCost(), projectedRemaining = projectedRound4CreditsRemaining(), overBy = Math.max(0, currentPlanCost - round4CreditsRemaining());
   return `<div class="round4-lab">
     <section class="r4-hero"><div><span class="r4-eyebrow">ROUND 04 / THE FINAL FORECAST</span><h1>Build. Compare. <em>Commit.</em></h1><p>Repair your telemetry. Explore five ensemble and five regular models. Turn the strongest experiment into your Kaggle submission.</p></div><div class="r4-clock"><span>LAB TIME REMAINING</span><strong id="quality-timer-value">${formatQualityCountdown()}</strong><small>90-minute lab · submit whenever ready</small></div></section>
+    <section class="r4-credit-hero ${overBy ? "is-over-budget" : ""}" id="round4-credit-hero"><div class="r4-credit-primary"><span>CREDITS LEFT AFTER CURRENT SELECTION</span><strong id="round4-credits-left">${projectedRemaining}</strong><small>/ ${ROUND4.creditBudget} CR</small></div><div class="r4-credit-breakdown"><div><span>AVAILABLE NOW</span><b id="round4-committed-remaining">${round4CreditsRemaining()} CR</b><small>after completed notebook runs</small></div><div><span>CURRENT SELECTION</span><b id="round4-current-selection-cost">${currentPlanCost} CR</b><small>model search + selected repairs</small></div><div><span>STATUS</span><b id="round4-credit-status">${overBy ? `OVER BY ${overBy} CR` : "READY"}</b><small>${overBy ? "reduce repairs or search range" : "updates instantly as you change selections"}</small></div></div></section>
     <div class="r4-wallets"><div><span>ROUND 4 WALLET</span><b>${round4CreditsRemaining()} <small>/ ${ROUND4.creditBudget} CR</small></b><p>${round4Spend()} spent · ${currentPlanCost} CR in the current experiment</p></div><div><span>NOTEBOOKS GENERATED</span><b>${forecastRuns.length}</b><p>Each new notebook charges its model search and selected repairs together.</p></div><div><span>YOUR MISSION</span><b>${data.recordCounts.finalTest} <small>predictions</small></b><p>Macro F1 · final standings on Kaggle</p></div></div>
     <div class="r4-roadmap"><span><b>01</b> Repair & plan <small>10–15 min</small></span><span><b>02</b> Search & compare <small>45–60 min</small></span><span><b>03</b> Submit to Kaggle <small>10–15 min</small></span></div>
     <section class="r4-panel"><div class="r4-heading"><div><span class="r4-eyebrow">01 / DATA QUALITY</span><h2>Make each repair count</h2></div><span class="r4-pill">3 CR per column & operation</span></div><p class="r4-muted">Repairs and model search draw from the same 200-credit Round 4 wallet. Edit the plan between experiments; each notebook keeps its own snapshot. Unselected missing cells use zero. Purchased methods learn from training folds only.</p>
@@ -555,6 +558,20 @@ function runSummary() {
   const plan = searchPlan(model, hyperparameters[model]), remaining = round4CreditsRemaining(), repairCost = currentRepairSpend(), totalCost = plan.cost + repairCost, minutes = (plan.targetSeconds / 60).toFixed(1);
   const insufficientCredits = remaining < totalCost;
   return `<span class="r4-eyebrow">THIS EXPERIMENT</span><h3>${esc(model)}</h3><div class="r4-run-price">${totalCost}<small> CR</small></div><dl><div><dt>Target runtime</dt><dd><strong>~${minutes} min</strong></dd></div><div><dt>Search space</dt><dd>${plan.combinations} configurations</dd></div><div><dt>Validation</dt><dd>${plan.folds}-fold Macro F1</dd></div><div><dt>Model search</dt><dd>${plan.cost} CR</dd></div><div><dt>Selected repairs</dt><dd>${repairCost} CR</dd></div><div><dt>Wallet after run</dt><dd>${remaining - totalCost} CR</dd></div></dl><p>Wider sliders unlock more values, more search time, and higher credit costs. The notebook samples the space; it may not visit every combination.</p><p class="r4-muted">Real CV work, including repeated folds for narrow ranges. Runtime is approximate; the current trial and final refit must finish.</p><button id="generate-kaggle" class="btn btn--primary" ${round4Closed() || generatingNotebook || insufficientCredits ? "disabled" : ""}>${round4Closed() ? "Lab closed" : generatingNotebook ? "Preparing notebook…" : insufficientCredits ? "Not enough Round 4 credits" : `Download experiment · ${totalCost} CR total`}</button><small>The shared 200-credit wallet is charged once per new notebook. Re-downloads are free.</small>`;
+}
+function updateRound4CreditPreview() {
+  if (!qualityPlan) return;
+  const available = round4CreditsRemaining(), selected = currentExperimentCost(), remaining = Math.max(0, available - selected), overBy = Math.max(0, selected - available);
+  const left = document.querySelector("#round4-credits-left"), availableNode = document.querySelector("#round4-committed-remaining"), selectedNode = document.querySelector("#round4-current-selection-cost"), statusNode = document.querySelector("#round4-credit-status"), hero = document.querySelector("#round4-credit-hero");
+  if (left) left.textContent = remaining;
+  if (availableNode) availableNode.textContent = `${available} CR`;
+  if (selectedNode) selectedNode.textContent = `${selected} CR`;
+  if (statusNode) statusNode.textContent = overBy ? `OVER BY ${overBy} CR` : "READY";
+  if (hero) {
+    hero.classList.toggle("is-over-budget", Boolean(overBy));
+    const note = hero.querySelector(".r4-credit-breakdown > div:last-child small");
+    if (note) note.textContent = overBy ? "reduce repairs or search range" : "updates instantly as you change selections";
+  }
 }
 function renderForecast() {
   const closed = round4Closed(), config = modelCatalog[model];
@@ -654,6 +671,7 @@ function bind() {
     document.querySelector(`[data-range-values="${key}"]`).textContent = values;
     input.setAttribute("aria-valuetext", values);
     document.querySelector("#round4-run-summary").innerHTML = runSummary();
+    updateRound4CreditPreview();
     bindGenerateNotebook(); checkpoint();
   });
   const seed = document.querySelector("#tuning-seed"); if (seed) seed.onchange = () => { tuning = normalizeTuning({ randomState: seed.value }); seed.value = tuning.randomState; checkpoint(); };
