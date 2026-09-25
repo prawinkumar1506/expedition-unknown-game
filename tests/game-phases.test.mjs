@@ -56,6 +56,16 @@ test("Event 1 recovery validates the required archive bundle and marks timeout f
   assert.equal(timeout.body.status, "failed");
 });
 
+test("Event 1 timer stays frozen after completion and the top notebook button is removed", async () => {
+  const fs = await import("node:fs/promises");
+  const source = await fs.readFile(new URL("../public/game.js", import.meta.url), "utf8");
+  const html = await fs.readFile(new URL("../public/game.html", import.meta.url), "utf8");
+  assert.match(source, /stageElapsed:\s*\{\s*event1:\s*event1TimeSpentSec,\s*features:\s*featureTimeSpentSec\s*\}/);
+  assert.match(source, /if \(event1Result\) \{[\s\S]*?event1TimerId = null;[\s\S]*?event1TimeSpentSec = Number\(event1Result\.timeTakenSeconds[\s\S]*?return;\s*\}/);
+  assert.doesNotMatch(html, /id="export"/);
+  assert.doesNotMatch(html, />Download notebook</);
+});
+
 test("Manual Override uses QuickRead answer keys and scores only correct answers", async () => {
   const room = "200002", player = "paper-team", event = assignment(room); 
   assert.ok(event.manualRows.length > 0); assert.ok(event.manualRows.every(row => row.manual_id.startsWith("QR_")));

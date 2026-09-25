@@ -4,7 +4,7 @@ import { MODEL_CATALOG as modelCatalog, ROUND4, searchPlan } from "/round4-confi
 const session = JSON.parse(sessionStorage.getItem("expedition-session") || "null");
 if (!session) window.location.replace("/");
 
-const box = document.querySelector("#workspace"), download = document.querySelector("#export"), statusText = document.querySelector("#mission-status");
+const box = document.querySelector("#workspace"), statusText = document.querySelector("#mission-status");
 const featureCredit = document.querySelector("#f-credit"), repairCredit = document.querySelector("#r-credit"), evaluationCredit = document.querySelector("#e-credit"), stageTimers = document.querySelector("#stage-timers");
 const stageOrder = ["event1", "manual", "features", "quality"];
 const analysisCatalog = [
@@ -84,7 +84,7 @@ const round4CreditsRemaining = () => Math.max(0, ROUND4.creditBudget - round4Spe
 const currentExperimentCost = () => qualityPlan ? searchPlan(model, hyperparameters[model]).cost + currentRepairSpend() : 0;
 const projectedRound4CreditsRemaining = () => Math.max(0, round4CreditsRemaining() - currentExperimentCost());
 const stageIsUnlocked = name => roomControl.stageUnlocks?.global?.includes(name) || roomControl.stageUnlocks?.players?.[session.player]?.includes(name);
-const serializeState = () => ({ stage, highestStage, stageStartedAt: { event1: event1TimerStart, manual: manualTimerStart, features: featureTimerStart, quality: qualityTimerStart, forecast: forecastTimerStart }, stageElapsed: { features: featureTimeSpentSec }, manualLabels, manualLocked, manualState, manualResult, event1Result, event1Selections, analysisState, analysisCredits, findings, selectedFeatures: [...selectedFeatures], featureState, featureResult, qualityPlan, repairs: Object.fromEntries(Object.entries(repairs).map(([key, value]) => [key, [...value]])), repairMethods, qualityState, qualityResult, model, tuning, hyperparameters, forecastRuns, round4CreditState, kaggleScript, forecastStatus, forecastLocked, kaggleSubmitted });
+const serializeState = () => ({ stage, highestStage, stageStartedAt: { event1: event1TimerStart, manual: manualTimerStart, features: featureTimerStart, quality: qualityTimerStart, forecast: forecastTimerStart }, stageElapsed: { event1: event1TimeSpentSec, features: featureTimeSpentSec }, manualLabels, manualLocked, manualState, manualResult, event1Result, event1Selections, analysisState, analysisCredits, findings, selectedFeatures: [...selectedFeatures], featureState, featureResult, qualityPlan, repairs: Object.fromEntries(Object.entries(repairs).map(([key, value]) => [key, [...value]])), repairMethods, qualityState, qualityResult, model, tuning, hyperparameters, forecastRuns, round4CreditState, kaggleScript, forecastStatus, forecastLocked, kaggleSubmitted });
 const applyState = saved => {
   if (!saved || typeof saved !== "object") return;
   stage = saved.stage === "forecast" ? "quality" : (saved.stage || stage); highestStage = Number(saved.highestStage || 0); manualLabels = saved.manualLabels || {}; manualLocked = Boolean(saved.manualLocked); manualState = saved.manualState || ""; manualResult = saved.manualResult || null; event1Result = saved.event1Result || null; event1Selections = saved.event1Selections || [];
@@ -92,6 +92,7 @@ const applyState = saved => {
   repairs = { missingColumns: new Set(saved.repairs?.missingColumns || []), outlierColumns: new Set(saved.repairs?.outlierColumns || []) }; repairMethods = saved.repairMethods || { missing: {}, outlier: {} };
   qualityState = saved.qualityState || ""; qualityResult = saved.qualityResult || null; model = Object.hasOwn(modelCatalog, saved.model) ? saved.model : "Random Forest"; tuning = saved.tuning || tuning; hyperparameters = saved.hyperparameters || {}; forecastRuns = Array.isArray(saved.forecastRuns) ? saved.forecastRuns : []; round4CreditState = saved.round4CreditState || ""; kaggleScript = saved.kaggleScript || ""; forecastStatus = saved.forecastStatus || ""; forecastLocked = Boolean(saved.forecastLocked); kaggleSubmitted = Boolean(saved.kaggleSubmitted);
   const starts = saved.stageStartedAt || {}; event1TimerStart = Number(starts.event1 || 0); manualTimerStart = Number(starts.manual || 0); featureTimerStart = Number(starts.features || 0); qualityTimerStart = Number(starts.quality || 0); forecastTimerStart = Number(starts.forecast || 0);
+  event1TimeSpentSec = Number(saved.stageElapsed?.event1 ?? event1Result?.timeTakenSeconds ?? 0);
   featureTimeSpentSec = Number(saved.stageElapsed?.features ?? featureResult?.timeTakenSeconds ?? 0);
   // Recover from partially persisted stage transitions. A successfully sealed
   // stage is stronger evidence than a stale highestStage counter.
@@ -242,7 +243,14 @@ const sealManualRound = async () => {
 };
 
 const startEvent1Timer = () => {
-  if (event1Result || event1TimerId) clearInterval(event1TimerId);
+  if (event1Result) {
+    if (event1TimerId) clearInterval(event1TimerId);
+    event1TimerId = null;
+    event1TimeSpentSec = Number(event1Result.timeTakenSeconds ?? event1TimeSpentSec ?? 0);
+    updateChrome();
+    return;
+  }
+  if (event1TimerId) clearInterval(event1TimerId);
   if (!event1TimerStart || event1TimerStart > Date.now()) event1TimerStart = Date.now();
   event1TimerId = setInterval(() => {
     event1TimeSpentSec = Math.min(EVENT1_TIMEOUT_SECONDS, Math.max(0, Math.floor((Date.now() - event1TimerStart) / 1000)));
@@ -634,9 +642,11 @@ function bind() {
     try {
       const result = await request("/api/recovery", { room: session.room, player: session.player, files: names, timeTakenSeconds: event1TimeSpentSec });
       event1Result = { passed: Boolean(result.passed), status: result.status || "completed", timeTakenSeconds: Number(result.timeTakenSeconds || event1TimeSpentSec) };
+      event1TimeSpentSec = Number(event1Result.timeTakenSeconds ?? event1TimeSpentSec);
       event1Status = result.message || "Archive reconstructed successfully. The selected recovery bundle was verified.";
       await saveEvent1Result(event1Result);
       highestStage = Math.max(highestStage, 1);
+      checkpoint();
       render();
     } catch (error) {
       event1Status = error.message || "The archive bundle is invalid.";
@@ -712,7 +722,7 @@ function bindGenerateNotebook() {
       const searchCost = Number(result.searchSpend ?? plan.cost), totalCost = Number(result.experimentSpend ?? (searchCost + repairCost));
       round4CreditState = result.round4CreditState || round4CreditState;
       forecastRuns = [{ model: chosenModel, cost: searchCost, repairCost, totalCost, targetSeconds: plan.targetSeconds, parameters: plan.parameters, ranges: plan.levels, repairs: repairSnapshot, repairMethods: methodSnapshot, createdAt: Date.now(), notebook: content }, ...forecastRuns];
-      qualityState = result.qualityState; qualityResult = null; kaggleSubmitted = false; kaggleScript = content; download.disabled = false;
+      qualityState = result.qualityState; qualityResult = null; kaggleSubmitted = false; kaggleScript = content;
       forecastStatus = `${chosenModel} notebook ready. ${totalCost} credits charged from the shared Round 4 wallet. Run it to create submission.csv; target ${(plan.targetSeconds / 60).toFixed(1)} minutes.`;
       checkpoint(); downloadNotebook(content, chosenModel);
     } catch (error) { forecastStatus = error.message; }
@@ -720,7 +730,6 @@ function bindGenerateNotebook() {
   };
 }
 
-download.onclick = () => { if (!kaggleScript) return; try { JSON.parse(kaggleScript); const url = URL.createObjectURL(new Blob([kaggleScript], { type: "application/x-ipynb+json" })), link = document.createElement("a"); link.href = url; link.download = kaggleFilename(model, "ipynb"); link.click(); URL.revokeObjectURL(url); } catch { forecastStatus = "The generated notebook JSON is invalid and was not downloaded."; render(); } };
   document.querySelectorAll("[data-stage]").forEach(button => button.onclick = () => setStage(button.dataset.stage));
 window.addEventListener("beforeunload", () => checkpoint());
 setInterval(() => checkpoint(), 5000);
