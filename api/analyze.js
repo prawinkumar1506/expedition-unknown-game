@@ -4,7 +4,7 @@ import { assignment, FEATURE_META, TRAFFIC_CLASSES } from "./_event.js";
 
 const CATALOG = {
   classprofiles: { cost: 3, scope: "feature" },
-  correlation: { cost: 3, scope: "pair" }
+  correlation: { cost: 2, scope: "pair" }
 };
 const BUDGET = 75;
 const secret = () => process.env.MATCH_GATEWAY_SECRET || "expedition-local-analysis-state";

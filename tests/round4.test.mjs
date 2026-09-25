@@ -33,9 +33,8 @@ test("Round 4 exposes five ensemble and five regular models with proportional ti
   }
   assert.ok(570 >= 1050 / 2);
   assert.ok(90 >= 150 / 2);
-  assert.equal(ROUND4.searchBudget, 150);
-  assert.ok(3 * 50 <= ROUND4.searchBudget);
-  assert.equal(ROUND4.repairBudget, 50);
+  assert.equal(ROUND4.creditBudget, 200);
+  assert.equal(ROUND4.minimumSeconds, 0);
 });
 
 test("normalization cannot lower timed work below its floor and seed zero is preserved", () => {
@@ -72,8 +71,39 @@ test("Round 4 API validates and seals actual selected repair methods", async () 
   assert.equal(sealed.methods.missing[features[0]], "mean");
   assert.equal(sealed.methods.outlier[features[1]], "median_clip");
   assert.equal(good.body.repairSpend, 6);
+  assert.equal(good.body.creditBudget, 200);
   const bad = await invoke(qualityHandler, { ...base, missingMethods: { [features[0]]: "invalid" } });
   assert.equal(bad.code, 409);
-  const over = await invoke(qualityHandler, { ...base, repairs: { missingColumns: features, outlierColumns: features } });
-  assert.equal(over.code, 409);
+  const fullRepairPlan = await invoke(qualityHandler, { ...base, repairs: { missingColumns: features, outlierColumns: features } });
+  assert.equal(fullRepairPlan.code, 200);
+  assert.equal(fullRepairPlan.body.repairSpend, 60);
+});
+
+test("Round 4 backend charges repair and model search from one signed 200-credit ledger", async () => {
+  const invoke = async (handler, body) => {
+    const res = { status(code) { this.code = code; return this; }, json(value) { this.body = value; return this; } };
+    await handler({ method: "POST", body }, res); return res;
+  };
+  const room = "740005", player = "round4-shared-wallet";
+  const lock = await invoke(featuresHandler, { room, player, features });
+  const repairs = { missingColumns: [features[0]], outlierColumns: [features[1]] };
+  const ranges = Object.fromEntries(Object.keys(MODEL_CATALOG["Random Forest"].parameters).map(key => [key, 1]));
+  const first = await invoke(qualityHandler, { room, player, action: "charge", featureState: lock.body.featureState, repairs, missingMethods: { [features[0]]: "mean" }, outlierMethods: { [features[1]]: "median_clip" }, model: "Random Forest", ranges });
+  assert.equal(first.code, 200);
+  assert.equal(first.body.repairSpend, 6);
+  assert.equal(first.body.searchSpend, 8);
+  assert.equal(first.body.experimentSpend, 14);
+  assert.equal(first.body.creditsRemaining, 186);
+  assert.ok(first.body.round4CreditState);
+
+  let state = first.body.round4CreditState, latest = first;
+  for (let index = 1; index < 14; index++) {
+    latest = await invoke(qualityHandler, { room, player, action: "charge", featureState: lock.body.featureState, repairs, missingMethods: { [features[0]]: "mean" }, outlierMethods: { [features[1]]: "median_clip" }, model: "Random Forest", ranges, round4CreditState: state });
+    assert.equal(latest.code, 200);
+    state = latest.body.round4CreditState;
+  }
+  assert.equal(latest.body.creditsRemaining, 4);
+  const blocked = await invoke(qualityHandler, { room, player, action: "charge", featureState: lock.body.featureState, repairs, missingMethods: { [features[0]]: "mean" }, outlierMethods: { [features[1]]: "median_clip" }, model: "Random Forest", ranges, round4CreditState: state });
+  assert.equal(blocked.code, 409);
+  assert.match(blocked.body.error, /only 4 remain/i);
 });

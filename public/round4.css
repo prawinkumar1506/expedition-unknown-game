@@ -14,7 +14,7 @@
 .round4-lab .r4-clock span { font: 10px 'JetBrains Mono', monospace; letter-spacing: 1px; color: var(--r4-accent); }
 .round4-lab .r4-clock strong { font: 42px 'JetBrains Mono', monospace; }
 .round4-lab .r4-clock small { font-size: 11px; color: #bccfc7; }
-.round4-lab .r4-wallets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.round4-lab .r4-wallets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .round4-lab .r4-wallets > div { background: #1b252f; border: 1px solid var(--r4-line); border-radius: 12px; padding: 22px; display: grid; gap: 10px; }
 .round4-lab .r4-wallets span { color: var(--r4-muted); font: 10px 'JetBrains Mono', monospace; letter-spacing: 1.5px; }
 .round4-lab .r4-wallets b { font-size: 30px; font-weight: 600; }

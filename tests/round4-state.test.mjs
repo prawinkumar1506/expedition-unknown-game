@@ -35,17 +35,18 @@ function client({ elapsed = 0, completed = false, failSave = false } = {}) {
       forecastRuns: [{cost: 8, repairCost: 3}], kaggleSubmitted: true,
       qualityResult: {qualityScore: 75, repairSpend: 3, status: '${completed ? "COMPLETED" : "IN_PROGRESS"}', timeTakenSeconds: ${elapsed}} });
     globalThis.state = { submitEvent4, startQualityTimer, round4Closed, serializeState, formatQualityCountdown,
-      restore: applyState, repairCreditsRemaining: event4CreditsRemaining, searchCreditsRemaining,
+      restore: applyState, round4CreditsRemaining,
       clock: () => qualityTimeSpentSec };
   `, context);
   return { ...context.state, calls, nodes };
 }
 
-test("Round 4 restores a consistent 90-minute countdown and allows early completion", async () => {
-  const session = client({ elapsed: 599 });
-  assert.equal(session.formatQualityCountdown(), "80:01");
+test("Round 4 restores a consistent 90-minute countdown and permits immediate completion", async () => {
+  const session = client({ elapsed: 0 });
+  assert.equal(session.formatQualityCountdown(), "90:00");
   await session.submitEvent4();
   assert.equal(session.calls.length, 1);
+  assert.equal(session.calls[0].path, "/api/scores");
   assert.equal(session.serializeState().forecastLocked, true);
 });
 
@@ -65,14 +66,13 @@ test("Round 4 completion persists full elapsed time and credits before locking",
   assert.equal(restored.round4Closed(), true);
 });
 
-test("Round 4 repair and model wallets remain cumulative across downloaded experiments", () => {
+test("Round 4 uses one cumulative 200-credit wallet across downloaded experiments", () => {
   const session = client({ elapsed: 100 });
   session.restore({ stage: "quality", stageStartedAt: { quality: 9_900_000 }, forecastRuns: [
     { cost: 19, repairCost: 12 },
     { cost: 19, repairCost: 12 }
   ] });
-  assert.equal(session.repairCreditsRemaining(), 26);
-  assert.equal(session.searchCreditsRemaining(), 112);
+  assert.equal(session.round4CreditsRemaining(), 138);
 });
 
 test("Round 4 remains retryable if score persistence fails", async () => {

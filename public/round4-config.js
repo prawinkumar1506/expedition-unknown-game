@@ -1,5 +1,5 @@
 // The Round 4 UI and exported notebook share this catalog and pricing policy.
-export const ROUND4 = Object.freeze({ durationSeconds: 90 * 60, minimumSeconds: 0, repairBudget: 50, searchBudget: 150 });
+export const ROUND4 = Object.freeze({ durationSeconds: 90 * 60, minimumSeconds: 0, creditBudget: 200 });
 const parameter = (label, values) => ({ label, values });
 const SEARCH_PROFILES = Object.freeze({
   ensemble: Object.freeze({ minSeconds: 150, maxSeconds: 1050, minCost: 8, maxCost: 50 }),

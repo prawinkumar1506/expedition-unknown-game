@@ -21,16 +21,13 @@ The first matching rule wins. Scoring is +1 correct and 0 for wrong or blank ans
 
 ### Event 3 — Feature Hunt
 
-The supplied damaged training archive exposes 21 telemetry channels. Teams spend from a signed 75-credit investigation ledger, then lock exactly 10 channels. Class Profiles and pairwise Correlation Analysis each cost 3 credits; reopening purchased evidence is free. Answer-revealing feature importance and derived features are intentionally absent.
+The supplied damaged training archive exposes 21 telemetry channels. Teams spend from a signed 75-credit investigation ledger, then lock exactly 10 channels. Class Profiles cost 3 credits and pairwise Correlation Analysis costs 2 credits; reopening purchased evidence is free. Answer-revealing feature importance and derived features are intentionally absent.
 
 ### Event 4 — Repair + Model Handoff
 
-Round 4 is a 90-minute final lab and teams may submit as soon as their Kaggle handoff is ready. It uses two cumulative sub-wallets inside a 200-credit overall competition budget:
+Round 4 is a 90-minute final lab and teams may submit as soon as their Kaggle handoff is ready. Repair choices and model-search ranges draw from one signed 200-credit Round 4 wallet. Missing-value or outlier treatment costs 3 credits per selected column/operation, while wider model-search ranges cost more credits and target longer real CV runtimes.
 
-- Repair wallet: 50 credits. Missing-value or outlier treatment costs 3 credits per selected column/operation.
-- Search wallet: 150 credits. Wider model-search ranges cost more credits and target longer real CV runtimes.
-
-Investigation, repair, and search spending all count toward the same 200-credit overall cap. The host leaderboard uses stage performance as the dominant factor, with smaller credit-efficiency and time-efficiency factors.
+The host leaderboard uses stage performance as the dominant factor, with smaller credit-efficiency and time-efficiency factors. Credit efficiency considers both the 75-credit investigation pool and the 200-credit Round 4 wallet.
 
 The original `train_16.csv` and `test_16.csv` remain unchanged. Each generated notebook carries the team's locked features, current repair plan, repair methods, model, search ranges, and random seed. Repair statistics are learned inside training folds so validation data is not used to choose imputation or outlier thresholds.
 
